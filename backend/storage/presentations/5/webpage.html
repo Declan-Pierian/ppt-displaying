@@ -1,0 +1,820 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Pierian Digital & AI Solutions</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --primary: #6366f1;
+    --primary-light: #818cf8;
+    --primary-dark: #4f46e5;
+    --accent: #06b6d4;
+    --accent2: #f59e0b;
+    --success: #10b981;
+    --danger: #ef4444;
+    --bg-dark: #0f172a;
+    --bg-card: #1e293b;
+    --bg-card2: #334155;
+    --text: #f1f5f9;
+    --text-muted: #94a3b8;
+    --gradient1: linear-gradient(135deg, #6366f1, #06b6d4);
+    --gradient2: linear-gradient(135deg, #f59e0b, #ef4444);
+    --gradient3: linear-gradient(135deg, #10b981, #06b6d4);
+    --olive: #a4ac00;
+  }
+
+  body {
+    font-family: 'Inter', -apple-system, sans-serif;
+    background: var(--bg-dark);
+    color: var(--text);
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
+  }
+
+  .deck { position: relative; width: 100vw; height: 100vh; }
+
+  .slide {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding: 60px 80px;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.5s ease, transform 0.5s ease;
+    transform: translateX(40px);
+    background: var(--bg-dark);
+    background-size: cover;
+    background-position: center;
+  }
+  .slide.active {
+    opacity: 1;
+    visibility: visible;
+    transform: translateX(0);
+  }
+
+  .progress-bar {
+    position: fixed;
+    top: 0; left: 0;
+    height: 3px;
+    background: var(--gradient1);
+    transition: width 0.4s ease;
+    z-index: 100;
+  }
+
+  .slide-counter {
+    position: fixed;
+    bottom: 24px; right: 32px;
+    font-size: 13px;
+    color: var(--text-muted);
+    z-index: 100;
+    font-weight: 500;
+  }
+
+  .nav-btn {
+    position: fixed;
+    top: 50%;
+    transform: translateY(-50%);
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.1);
+    color: var(--text-muted);
+    width: 44px; height: 44px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 100;
+    transition: all 0.2s;
+    font-size: 18px;
+  }
+  .nav-btn:hover { background: rgba(255,255,255,0.12); color: #fff; }
+  .nav-prev { left: 20px; }
+  .nav-next { right: 20px; }
+
+  h1 { font-size: 56px; font-weight: 800; line-height: 1.1; letter-spacing: -1.5px; }
+  h2 { font-size: 40px; font-weight: 700; line-height: 1.2; letter-spacing: -1px; margin-bottom: 12px; }
+  h3 { font-size: 22px; font-weight: 600; margin-bottom: 8px; }
+  .subtitle { font-size: 20px; color: var(--text-muted); font-weight: 400; margin-top: 12px; line-height: 1.6; }
+  .tag {
+    display: inline-block;
+    padding: 6px 16px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    margin-bottom: 16px;
+  }
+  .tag-primary { background: rgba(99,102,241,0.15); color: var(--primary-light); }
+  .tag-accent { background: rgba(6,182,212,0.15); color: var(--accent); }
+  .tag-success { background: rgba(16,185,129,0.15); color: var(--success); }
+  .tag-warning { background: rgba(245,158,11,0.15); color: var(--accent2); }
+  .tag-danger { background: rgba(239,68,68,0.15); color: var(--danger); }
+
+  .gradient-text {
+    background: var(--gradient1);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .olive-text { color: var(--olive); }
+
+  .full-width { width: 100%; max-width: 1100px; }
+  .text-center { text-align: center; }
+  .text-left { text-align: left; }
+  .mt-8 { margin-top: 8px; }
+  .mt-16 { margin-top: 16px; }
+  .mt-24 { margin-top: 24px; }
+  .mt-32 { margin-top: 32px; }
+  .mt-40 { margin-top: 40px; }
+
+  .cols { display: grid; gap: 20px; width: 100%; max-width: 1100px; }
+  .cols-2 { grid-template-columns: 1fr 1fr; }
+  .cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+  .cols-4 { grid-template-columns: 1fr 1fr 1fr 1fr; }
+
+  .card {
+    background: var(--bg-card);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 16px;
+    padding: 28px;
+    transition: transform 0.2s, box-shadow 0.2s;
+  }
+  .card:hover { transform: translateY(-2px); box-shadow: 0 8px 32px rgba(0,0,0,0.3); }
+  .card-icon {
+    width: 44px; height: 44px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    margin-bottom: 16px;
+  }
+  .card p { color: var(--text-muted); font-size: 14px; line-height: 1.6; margin-top: 8px; }
+  .card .card-title { font-size: 16px; font-weight: 600; color: var(--text); }
+
+  .icon-primary { background: rgba(99,102,241,0.15); }
+  .icon-accent { background: rgba(6,182,212,0.15); }
+  .icon-success { background: rgba(16,185,129,0.15); }
+  .icon-warning { background: rgba(245,158,11,0.15); }
+
+  .feature-list { list-style: none; padding: 0; }
+  .feature-list li {
+    padding: 10px 0;
+    font-size: 15px;
+    color: var(--text-muted);
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    line-height: 1.5;
+  }
+  .feature-list li::before {
+    content: '\2713';
+    color: var(--success);
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+
+  .toc-item {
+    padding: 12px 0;
+    font-size: 16px;
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    line-height: 1.5;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+  }
+  .toc-item:last-child { border-bottom: none; }
+  .toc-num {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--olive);
+    min-width: 30px;
+  }
+  .toc-marker {
+    width: 12px;
+    height: 12px;
+    background: var(--olive);
+    border-radius: 2px;
+    margin-right: 4px;
+  }
+
+  .divider {
+    width: 60px;
+    height: 3px;
+    background: var(--gradient1);
+    border-radius: 2px;
+    margin: 16px 0;
+  }
+
+  .back-btn {
+    position: fixed;
+    top: 16px; left: 16px;
+    z-index: 100;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.1);
+    color: var(--text-muted);
+    width: 40px; height: 40px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-size: 16px;
+    text-decoration: none;
+  }
+  .back-btn:hover { background: rgba(255,255,255,0.12); color: #fff; }
+
+  .slide-image {
+    max-width: 100%;
+    max-height: 60vh;
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+    object-fit: contain;
+  }
+
+  .content-box {
+    background: rgba(255,255,255,0.04);
+    border-left: 3px solid var(--danger);
+    border-radius: 0 12px 12px 0;
+    padding: 20px 24px;
+    margin-bottom: 16px;
+    max-width: 100%;
+  }
+
+  .content-box h4 {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--olive);
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+
+  .content-box ul {
+    list-style: none;
+    padding-left: 0;
+  }
+
+  .content-box li {
+    font-size: 14px;
+    color: var(--text);
+    margin-bottom: 6px;
+    line-height: 1.5;
+  }
+
+  .content-box li::before {
+    content: '•';
+    margin-right: 8px;
+    color: var(--danger);
+  }
+
+  .use-case-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    width: 100%;
+    max-width: 1100px;
+  }
+
+  .use-case-col h3 {
+    color: var(--olive);
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 16px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+
+  .grid-4col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    width: 100%;
+    max-width: 1100px;
+  }
+
+  .use-case-item {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 12px;
+    padding: 20px;
+  }
+
+  .use-case-item h4 {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--olive);
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+
+  .use-case-item p {
+    font-size: 13px;
+    color: var(--text-muted);
+    line-height: 1.5;
+  }
+
+  @media (max-width: 900px) {
+    .slide { padding: 40px 32px; }
+    h1 { font-size: 36px; }
+    h2 { font-size: 28px; }
+    .cols-3, .cols-4 { grid-template-columns: 1fr 1fr; }
+    .use-case-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div class="progress-bar" id="progressBar"></div>
+<div class="slide-counter" id="slideCounter"></div>
+<a href="/" class="back-btn" title="Back to presentations">&larr;</a>
+<button class="nav-btn nav-prev" onclick="prevSlide()">&#8592;</button>
+<button class="nav-btn nav-next" onclick="nextSlide()">&#8594;</button>
+
+<div class="deck" id="deck">
+
+<!-- SLIDE 1: TITLE -->
+<div class="slide text-center">
+  <h1><span class="olive-text">Pierian Digital<br>& AI Solutions</span></h1>
+</div>
+
+<!-- SLIDE 2: TABLE OF CONTENTS -->
+<div class="slide">
+  <div class="full-width text-left">
+    <h2 class="olive-text">Table of contents</h2>
+    <div class="mt-32" style="max-width: 600px;">
+      <div class="toc-item">
+        <span class="toc-marker"></span>
+        <span class="toc-num">01</span>
+        <span>Introduction</span>
+      </div>
+      <div class="toc-item">
+        <span class="toc-marker"></span>
+        <span class="toc-num">02</span>
+        <span>Pierian AI Approach & Solution Stack</span>
+      </div>
+      <div class="toc-item">
+        <span class="toc-marker"></span>
+        <span class="toc-num">03</span>
+        <span>Use Case 1: AI in Accounts Payable & PO</span>
+      </div>
+      <div class="toc-item">
+        <span class="toc-marker"></span>
+        <span class="toc-num">04</span>
+        <span>Use Cases : AI in Analytics</span>
+      </div>
+      <div class="toc-item">
+        <span class="toc-marker"></span>
+        <span class="toc-num">05</span>
+        <span>Use Cases : AI in HyperAutomation</span>
+      </div>
+      <div class="toc-item">
+        <span class="toc-marker"></span>
+        <span class="toc-num">06</span>
+        <span>Discussion on Next steps</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SLIDE 3: WE ARE PIERIAN -->
+<div class="slide">
+  <div class="full-width text-left">
+    <h2 class="olive-text">We are Pierian</h2>
+    <p style="font-size: 15px; color: var(--text-muted); max-width: 600px; line-height: 1.8; margin-top: 16px;">
+      An AI-driven global business process management company. We help you reimagine and streamline operations with insights that elevate your decision-making and give you the competitive edge:
+    </p>
+    
+    <div style="margin-top: 40px; max-width: 600px;">
+      <div style="display: flex; gap: 12px; margin-bottom: 16px; align-items: flex-start;">
+        <div style="width: 8px; height: 8px; background: var(--danger); margin-top: 6px; flex-shrink: 0; border-radius: 1px;"></div>
+        <p style="font-size: 14px; color: var(--text); line-height: 1.6;">Across finance and business operations by automating workflows</p>
+      </div>
+      <div style="display: flex; gap: 12px; margin-bottom: 16px; align-items: flex-start;">
+        <div style="width: 8px; height: 8px; background: var(--danger); margin-top: 6px; flex-shrink: 0; border-radius: 1px;"></div>
+        <p style="font-size: 14px; color: var(--text); line-height: 1.6;">With AI and analytics to drive analytics-based decision-making</p>
+      </div>
+      <div style="display: flex; gap: 12px; margin-bottom: 16px; align-items: flex-start;">
+        <div style="width: 8px; height: 8px; background: var(--danger); margin-top: 6px; flex-shrink: 0; border-radius: 1px;"></div>
+        <p style="font-size: 14px; color: var(--text); line-height: 1.6;">Ensuring compliance and risk management through AI-enabled data and process governance</p>
+      </div>
+      <div style="display: flex; gap: 12px; align-items: flex-start;">
+        <div style="width: 8px; height: 8px; background: var(--danger); margin-top: 6px; flex-shrink: 0; border-radius: 1px;"></div>
+        <p style="font-size: 14px; color: var(--text); line-height: 1.6;">Powering your shift away from cost-centric operations to value-led operations</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SLIDE 4: PIERIAN AI APPROACH -->
+<div class="slide" style="background-image: url('/api/v1/media/5/bg_slide3.png');">
+  <div class="full-width text-left">
+    <h2 class="olive-text">Pierian AI Approach</h2>
+    <p style="font-size: 15px; color: var(--text-muted); max-width: 800px; line-height: 1.8; margin-top: 16px;">
+      Pierian has building blocks with capability and solutions to turn unstructured, scattered data into valuable business insights, actions and automation
+    </p>
+  </div>
+</div>
+
+<!-- SLIDE 5: PIERIAN SOLUTION STACK -->
+<div class="slide" style="background-image: url('/api/v1/media/5/bg_slide4.png');">
+  <div class="full-width text-left">
+    <h2 class="olive-text">Pierian Solution Stack</h2>
+    <div class="mt-32">
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 40px; max-width: 1100px;">
+        <div>
+          <h3 style="color: var(--text); font-size: 14px; margin-bottom: 16px;">INTELLIGENCE & CORE TECH STACK</h3>
+          <ul class="feature-list" style="font-size: 13px;">
+            <li>AI Infrastructure on premises and cloud</li>
+            <li>Custom App development framework</li>
+            <li>Pierian App Store (authenticated with o365 or SSO login)</li>
+            <li>Tracking and Ticketing tools</li>
+            <li>Visualization & reporting platform</li>
+            <li>Automated Azure Data Factory Pipelines</li>
+            <li>Workflow Solutions</li>
+            <li>Any-to-Any Integration Servers</li>
+          </ul>
+        </div>
+        <div>
+          <h3 style="color: var(--text); font-size: 14px; margin-bottom: 16px;">FUNCTIONAL & DOCUMENT UTILITIES</h3>
+          <ul class="feature-list" style="font-size: 13px;">
+            <li>AI Co-pilots</li>
+            <li>Document Utilities
+              <ul style="margin-left: 20px; margin-top: 8px;">
+                <li>RAG</li>
+                <li>Excel Splitter</li>
+                <li>Document Chunker</li>
+                <li>Document Summarizer</li>
+                <li>Excel to PDF, PDF to Excel, PDF to DB</li>
+                <li>Bank Statement extractor to DB</li>
+              </ul>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SLIDE 6: TECHNOLOGY -->
+<div class="slide" style="background-image: url('/api/v1/media/5/bg_slide5.png');">
+  <div class="full-width text-left">
+    <h2 class="olive-text">Technology</h2>
+    <p style="font-size: 13px; color: var(--text-muted); margin-top: 20px; max-width: 800px;">
+      Pierian leverages cutting-edge technologies and platforms to build intelligent solutions:
+    </p>
+    <div style="margin-top: 32px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; max-width: 1100px; font-size: 13px; color: var(--text-muted); text-align: center;">
+      <div>
+        <div style="height: 60px; display: flex; align-items: center; justify-content: center; margin-bottom: 8px;">📊</div>
+        <p>MS Azure Data Factory</p>
+      </div>
+      <div>
+        <div style="height: 60px; display: flex; align-items: center; justify-content: center; margin-bottom: 8px;">🧬</div>
+        <p>MS Fabric</p>
+      </div>
+      <div>
+        <div style="height: 60px; display: flex; align-items: center; justify-content: center; margin-bottom: 8px;">📈</div>
+        <p>Power BI</p>
+      </div>
+      <div>
+        <div style="height: 60px; display: flex; align-items: center; justify-content: center; margin-bottom: 8px;">🤖</div>
+        <p>Anthropic</p>
+      </div>
+      <div>
+        <div style="height: 60px; display: flex; align-items: center; justify-content: center; margin-bottom: 8px;">⚙️</div>
+        <p>N8nWorkflows</p>
+      </div>
+      <div>
+        <div style="height: 60px; display: flex; align-items: center; justify-content: center; margin-bottom: 8px;">📱</div>
+        <p>Zoho Business Suite</p>
+      </div>
+      <div>
+        <div style="height: 60px; display: flex; align-items: center; justify-content: center; margin-bottom: 8px;">⚛️</div>
+        <p>React.js</p>
+      </div>
+      <div>
+        <div style="height: 60px; display: flex; align-items: center; justify-content: center; margin-bottom: 8px;">🔌</div>
+        <p>Model Context Protocol</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SLIDE 7: PIERIAN APP STORE -->
+<div class="slide" style="background-image: url('/api/v1/media/5/bg_slide6.png');">
+  <div class="full-width text-left">
+    <h2 class="olive-text">Pierian App Store</h2>
+    <div style="margin-top: 32px; max-width: 600px;">
+      <p style="font-size: 15px; color: var(--text); line-height: 1.8; margin-bottom: 20px;">
+        The Pierian App store is a full stack collection of AI and Digital Applications that are of use to every professional in the enterprise across functions.
+      </p>
+      <p style="font-size: 15px; color: var(--text); line-height: 1.8;">
+        The app store is offered to Customers by Pierian in conjunction with specialized services.
+      </p>
+    </div>
+  </div>
+</div>
+
+<!-- SLIDE 8: USE CASE ACCOUNTS PAYABLE -->
+<div class="slide" style="background-image: url('/api/v1/media/5/bg_slide7.png');">
+  <div class="full-width text-left">
+    <h2 class="olive-text">Use Case: Accounts Payable using AI/ ML</h2>
+    <p style="font-size: 13px; color: var(--text-muted); margin-top: 12px; max-width: 900px;">
+      Pierian provides integrated solutions for automating the entire accounts payable lifecycle with AI and machine learning.
+    </p>
+  </div>
+</div>
+
+<!-- SLIDE 9: PO FLOW -->
+<div class="slide" style="background-image: url('/api/v1/media/5/bg_slide8.png');">
+  <div class="full-width text-left">
+    <h2 class="olive-text">PO Flow using AI/ML</h2>
+    <p style="font-size: 13px; color: var(--text-muted); margin-top: 12px; max-width: 900px;">
+      Streamlined Purchase Order creation and management through intelligent automation and AI-driven approvals.
+    </p>
+  </div>
+</div>
+
+<!-- SLIDE 10: INVOICE PROCESSING -->
+<div class="slide" style="background-image: url('/api/v1/media/5/bg_slide9.png');">
+  <div class="full-width text-left">
+    <h2 class="olive-text">Invoice Processing flow – using AI/ML</h2>
+    <p style="font-size: 13px; color: var(--text-muted); margin-top: 12px; max-width: 900px;">
+      End-to-end invoice processing with automated data extraction, matching, and integration into ERP systems.
+    </p>
+  </div>
+</div>
+
+<!-- SLIDE 11: RECEIVING FLOW -->
+<div class="slide" style="background-image: url('/api/v1/media/5/bg_slide10.png');">
+  <div class="full-width text-left">
+    <h2 class="olive-text">Receiving flow – using AI/ML</h2>
+    <p style="font-size: 13px; color: var(--text-muted); margin-top: 12px; max-width: 900px;">
+      Automated goods receipt processing with intelligent GRN creation and exception handling.
+    </p>
+  </div>
+</div>
+
+<!-- SLIDE 12: DATA & ANALYTICS -->
+<div class="slide">
+  <div class="full-width text-left">
+    <h2 class="olive-text">Data & Analytics</h2>
+    <div class="mt-32">
+      <ul class="feature-list" style="font-size: 16px;">
+        <li>Analytics as a Service</li>
+        <li>Data Management and Integration</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- SLIDE 13: DATA & ANALYTICS USE CASES -->
+<div class="slide">
+  <div class="full-width text-left">
+    <h2 class="olive-text">Data & Analytics – Use Cases</h2>
+    <div class="mt-32">
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; max-width: 1100px;">
+        <div class="content-box">
+          <h4>Fingertips for eCommerce</h4>
+          <p style="font-size: 13px; color: var(--text-muted); line-height: 1.6;">
+            AI Analysis of eCommerce, ERP data to determine profitability, and complete MIS & guidance for P2P and O2C
+          </p>
+        </div>
+        <div class="content-box">
+          <h4>Travel Management System</h4>
+          <p style="font-size: 13px; color: var(--text-muted); line-height: 1.6;">
+            Comprehensive and Integrated Travel management System, with integration of Sabre data to provide daily insights on bookings, revenue, and profitability across Air, Car, and Hotels.
+          </p>
+        </div>
+        <div class="content-box">
+          <h4>Revenue Leakage Identification</h4>
+          <p style="font-size: 13px; color: var(--text-muted); line-height: 1.6;">
+            Analysis of vast amounts of data from multiple sources to be able to identify revenue leakage and credit note causal analysis
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SLIDE 14: SAMPLE USE CASE ECOMMERCE -->
+<div class="slide">
+  <div class="full-width text-left">
+    <h2 class="olive-text">Sample Use Case: Fingertips for eCommerce Marketplace Sellers</h2>
+    <div class="mt-24">
+      <div class="use-case-grid">
+        <div class="use-case-col">
+          <h3>Background</h3>
+          <div class="content-box">
+            <ul>
+              <li>An e-commerce company struggled with tracking performance and managing inventory effectively.</li>
+              <li>Lack of real-time visibility into critical metrics hindered decision-making.</li>
+              <li>Manual reporting made it difficult to optimize operations.</li>
+              <li>As a result, strategic planning and growth were consistently impacted.</li>
+            </ul>
+          </div>
+        </div>
+        <div class="use-case-col">
+          <h3>Challenges</h3>
+          <div class="content-box">
+            <ul>
+              <li>Data was scattered across sales, inventory, pricing, and liabilities systems.</li>
+              <li>Manual analysis limited actionable insights and slowed responsiveness.</li>
+              <li>Decisions were often delayed due to lack of real-time visibility.</li>
+              <li>The business faced inefficiencies that reduced competitiveness.</li>
+            </ul>
+          </div>
+        </div>
+        <div class="use-case-col">
+          <h3>Solution: Fingertips with power BI</h3>
+          <div class="content-box">
+            <ul>
+              <li>An analytics platform provided a centralized KPI dashboard for visibility.</li>
+              <li>Dynamic visualizations enabled trend detection and performance monitoring.</li>
+            </ul>
+          </div>
+        </div>
+        <div class="use-case-col">
+          <h3>Benefit</h3>
+          <div class="content-box">
+            <ul>
+              <li>Delivered a unified view of critical business metrics and trends.</li>
+              <li>Enabled real-time, data-driven strategic and operational decisions.</li>
+              <li>Automated reporting cut manual workload and improved efficiency.</li>
+              <li>Optimized inventory, pricing, and liabilities management to drive growth.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SLIDE 15: LOGISTICS PAYMENT RECONCILIATION -->
+<div class="slide">
+  <div class="full-width text-left">
+    <h2 class="olive-text">Use Case: Logistics Payment Reconciliation</h2>
+    <div class="mt-24">
+      <div class="use-case-grid">
+        <div class="use-case-col">
+          <h3>Background</h3>
+          <div class="content-box">
+            <ul>
+              <li>Ecommerce marketplace Operates with 10–15 logistics partners, managing thousands of shipments daily.</li>
+              <li>Variables include pin code, shipment mode, weight, zone, and service level.</li>
+            </ul>
+          </div>
+        </div>
+        <div class="use-case-col">
+          <h3>Challenges</h3>
+          <div class="content-box">
+            <ul>
+              <li>Contract complexity – thousands of rate combinations, frequently changing</li>
+              <li>Diverse scenarios with calculations for partshipments, failed deliveries, returns, surcharges and COD</li>
+              <li>Huge volume needing validation with lengthy resolution cycles</li>
+            </ul>
+          </div>
+        </div>
+        <div class="use-case-col">
+          <h3>Solution: AI Based Logistics Reconciliation Tool</h3>
+          <div class="content-box">
+            <ul>
+              <li>Automated data ingestion, dynamic contract management, AI Powered audit engine that automates dispute handling and tracks resolution</li>
+            </ul>
+          </div>
+        </div>
+        <div class="use-case-col">
+          <h3>Benefit</h3>
+          <div class="content-box">
+            <ul>
+              <li><strong>Error Detection & Cost Recovery</strong>: Identified significant overpayments, safeguarding 2–5% of monthly freight spend.</li>
+              <li><strong>Efficiency Boost</strong>: Reduced reconciliation time from weeks to 1–2 days, automating 75–85% of invoice lines.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SLIDE 16: OTHER AI USE CASES -->
+<div class="slide">
+  <div class="full-width text-left">
+    <h2 class="olive-text">Other AI use cases at Pierian</h2>
+    <div class="mt-32">
+      <div class="grid-4col">
+        <div class="use-case-item">
+          <h4>Payment Gateway Recon</h4>
+          <p>Daily reconciliation of data from different payment gateways, with bank records and Orders from ERP</p>
+        </div>
+        <div class="use-case-item">
+          <h4>Logistics Recon</h4>
+          <p>Reconciliation of shipment invoices from logistics providers with shipment data from ERP and rate card</p>
+        </div>
+        <div class="use-case-item">
+          <h4>Vendor Support & Analysis</h4>
+          <p>AI Analysis of Key Account Manager interactions with Vendors and identifying improvements and actions needed to improve service levels</p>
+        </div>
+        <div class="use-case-item">
+          <h4>AI Student Counsellor at a University</h4>
+          <p>An AI Agent to assist prospective and existing students offering admission assistance and student assistance for transactions</p>
+        </div>
+        <div class="use-case-item">
+          <h4>AP & Vendor SOA Reconciliation</h4>
+          <p>Automated processing of Accounts payable using a workflow built with multi-functional agents</p>
+        </div>
+        <div class="use-case-item">
+          <h4>Accounts Receivable</h4>
+          <p>Automated workflows for Follow up and communication with customers on unpaid ageing invoices</p>
+        </div>
+        <div class="use-case-item">
+          <h4>Credit Card Reconciliation</h4>
+          <p>Reconciliation of credit card statements and GL Accounting entries</p>
+        </div>
+        <div class="use-case-item">
+          <h4>Medical Billing Recon</h4>
+          <p>Reconciliation of Bank transfers and Hospital billing records with data from portals</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SLIDE 17: AGENTIC AI KEY USE CASES -->
+<div class="slide">
+  <div class="full-width text-left">
+    <h2 class="olive-text">Agentic AI - Key Use Cases</h2>
+    <div class="mt-32">
+      <div style="max-width: 800px;">
+        <div style="margin-bottom: 32px;">
+          <h3 style="color: var(--olive); font-size: 16px; margin-bottom: 12px;">eCommerce Vendor Support & Analysis</h3>
+          <p style="font-size: 14px; color: var(--text); line-height: 1.6;">
+            Agentic AI Support for Vendor Support. AI Analysis of interactions with Vendors to improve service levels
+          </p>
+        </div>
+
+        <div style="margin-bottom: 32px;">
+          <h3 style="color: var(--olive); font-size: 16px; margin-bottom: 12px;">Employee Services Agent</h3>
+          <p style="font-size: 14px; color: var(--text); line-height: 1.6;">
+            Agentic services for Employee services in IT, HR, Facilities and procurement
+          </p>
+        </div>
+
+        <div>
+          <h3 style="color: var(--olive); font-size: 16px; margin-bottom: 12px;">Finance Reconciliation Agent</h3>
+          <p style="font-size: 14px; color: var(--text); line-height: 1.6;">
+            SOA, Vendor Reconciliation and GL Accounting entries
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div>
+
+<script>
+  let current = 0;
+  const slides = document.querySelectorAll('.slide');
+  const total = slides.length;
+
+  function show(idx) {
+    slides.forEach((s, i) => { s.classList.toggle('active', i === idx); });
+    document.getElementById('progressBar').style.width = ((idx + 1) / total * 100) + '%';
+    document.getElementById('slideCounter').textContent = (idx + 1) + ' / ' + total;
+  }
+
+  function nextSlide() { if (current < total - 1) { current++; show(current); } }
+  function prevSlide() { if (current > 0) { current--; show(current); } }
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); nextSlide(); }
+    if (e.key === 'ArrowLeft' || e.key === 'Backspace') { e.preventDefault(); prevSlide(); }
+    if (e.key === 'Home') { current = 0; show(current); }
+    if (e.key === 'End') { current = total - 1; show(current); }
+  });
+
+  let touchStartX = 0;
+  document.addEventListener('touchstart', (e) => { touchStartX = e.touches[0].clientX; });
+  document.addEventListener('touchend', (e) => {
+    const diff = touchStartX - e.changedTouches[0].clientX;
+    if (Math.abs(diff) > 50) { diff > 0 ? nextSlide() : prevSlide(); }
+  });
+
+  show(0);
+</script>
+</body>
+</html>

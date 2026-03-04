@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Pierian Digital & AI Solutions</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --primary: #6366f1;
+    --primary-light: #818cf8;
+    --primary-dark: #4f46e5;
+    --accent: #06b6d4;
+    --accent2: #f59e0b;
+    --success: #10b981;
+    --danger: #ef4444;
+    --bg-dark: #0f172a;
+    --bg-card: #1e293b;
+    --bg-card2: #334155;
+    --text: #f1f5f9;
+    --text-muted: #94a3b8;
+    --gradient1: linear-gradient(135deg, #6366f1, #06b6d4);
+    --gradient2: linear-gradient(135deg, #f59e0b, #ef4444);
+    --gradient3: linear-gradient(135deg, #10b981, #06b6d4);
+  }
+
+  body {
+    font-family: 'Inter', -apple-system, sans-serif;
+    background: var(--bg-dark);
+    color: var(--text);
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
+  }
+
+  .deck { position: relative; width: 100vw; height: 100vh; }
+
+  .slide {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding: 60px 80px;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.5s ease, transform 0.5s ease;
+    transform: translateX(40px);
+    background: var(--bg-dark);
+    background-size: cover;
+    background-position: center;
+  }
+  .slide.active {
+    opacity: 1;
+    visibility: visible;
+    transform: translateX(0);
+  }
+
+  .progress-bar {
+    position: fixed;
+    top: 0; left: 0;
+    height: 3px;
+    background: var(--gradient1);
+    transition: width 0.4s ease;
+    z-index: 100;
+  }
+
+  .slide-counter {
+    position: fixed;
+    bottom: 24px; right: 32px;
+    font-size: 13px;
+    color: var(--text-muted);
+    z-index: 100;
+    font-weight: 500;
+  }
+
+  .nav-btn {
+    position: fixed;
+    top: 50%;
+    transform: translateY(-50%);
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.1);
+    color: var(--text-muted);
+    width: 44px; height: 44px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 100;
+    transition: all 0.2s;
+    font-size: 18px;
+  }
+  .nav-btn:hover { background: rgba(255,255,255,0.12); color: #fff; }
+  .nav-prev { left: 20px; }
+  .nav-next { right: 20px; }
+
+  h1 { font-size: 56px; font-weight: 800; line-height: 1.1; letter-spacing: -1.5px; }
+  h2 { font-size: 40px; font-weight: 700; line-height: 1.2; letter-spacing: -1px; margin-bottom: 12px; }
+  h3 { font-size: 22px; font-weight: 600; margin-bottom: 8px; }
+  .subtitle { font-size: 20px; color: var(--text-muted); font-weight: 400; margin-top: 12px; line-height: 1.6; }
+  .tag {
+    display: inline-block;
+    padding: 6px 16px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    margin-bottom: 16px;
+  }
+  .tag-primary { background: rgba(99,102,241,0.15); color: var(--primary-light); }
+  .tag-accent { background: rgba(6,182,212,0.15); color: var(--accent); }
+  .tag-success { background: rgba(16,185,129,0.15); color: var(--success); }
+  .tag-warning { background: rgba(245,158,11,0.15); color: var(--accent2); }
+  .tag-danger { background: rgba(239,68,68,0.15); color: var(--danger); }
+
+  .gradient-text {
+    background: linear-gradient(135deg, #c4b537, #9ba837);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .full-width { width: 100%; max-width: 1100px; }
+  .text-center { text-align: center; }
+  .mt-8 { margin-top: 8px; }
+  .mt-16 { margin-top: 16px; }
+  .mt-24 { margin-top: 24px; }
+  .mt-32 { margin-top: 32px; }
+  .mt-40 { margin-top: 40px; }
+
+  .cols { display: grid; gap: 20px; width: 100%; max-width: 1100px; }
+  .cols-2 { grid-template-columns: 1fr 1fr; }
+  .cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+  .cols-4 { grid-template-columns: 1fr 1fr 1fr 1fr; }
+
+  .card {
+    background: var(--bg-card);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 16px;
+    padding: 28px;
+    transition: transform 0.2s, box-shadow 0.2s;
+  }
+  .card:hover { transform: translateY(-2px); box-shadow: 0 8px 32px rgba(0,0,0,0.3); }
+  .card-icon {
+    width: 44px; height: 44px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    margin-bottom: 16px;
+  }
+  .card p { color: var(--text-muted); font-size: 14px; line-height: 1.6; margin-top: 8px; }
+  .card .card-title { font-size: 16px; font-weight: 600; color: var(--text); }
+
+  .icon-primary { background: rgba(99,102,241,0.15); }
+  .icon-accent { background: rgba(6,182,212,0.15); }
+  .icon-success { background: rgba(16,185,129,0.15); }
+  .icon-warning { background: rgba(245,158,11,0.15); }
+
+  .feature-list { list-style: none; padding: 0; }
+  .feature-list li {
+    padding: 10px 0;
+    font-size: 15px;
+    color: var(--text-muted);
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    line-height: 1.5;
+  }
+  .feature-list li::before {
+    content: '\2713';
+    color: var(--success);
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+
+  .toc-item {
+    display: flex;
+    align-items: center;
+    padding: 12px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    font-size: 16px;
+  }
+  .toc-item:last-child { border-bottom: none; }
+  .toc-number {
+    background: linear-gradient(135deg, #c4b537, #9ba837);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    font-weight: 700;
+    font-size: 18px;
+    margin-right: 20px;
+    min-width: 40px;
+  }
+  .toc-line {
+    flex: 1;
+    color: var(--text);
+  }
+
+  .problem-card {
+    background: var(--bg-card);
+    border-left: 3px solid var(--danger);
+    border-radius: 0 12px 12px 0;
+    padding: 20px 24px;
+    margin-bottom: 12px;
+    width: 100%;
+  }
+
+  .slide-title { position: relative; }
+  .slide-title::before {
+    content: '';
+    position: absolute;
+    top: -100px; right: -100px;
+    width: 500px; height: 500px;
+    background: radial-gradient(circle, rgba(99,102,241,0.12) 0%, transparent 70%);
+    border-radius: 50%;
+    pointer-events: none;
+  }
+
+  .back-btn {
+    position: fixed;
+    top: 16px; left: 16px;
+    z-index: 100;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.1);
+    color: var(--text-muted);
+    width: 40px; height: 40px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-size: 16px;
+    text-decoration: none;
+  }
+  .back-btn:hover { background: rgba(255,255,255,0.12); color: #fff; }
+
+  .slide-image {
+    max-width: 100%;
+    max-height: 60vh;
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+    object-fit: contain;
+  }
+
+  .grid-2x2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .grid-1x2 { display: grid; grid-template-columns: 1fr; gap: 20px; }
+
+  .case-section {
+    background: rgba(255,255,255,0.04);
+    border-left: 3px solid var(--danger);
+    border-radius: 0 8px 8px 0;
+    padding: 20px;
+    margin-bottom: 16px;
+  }
+  .case-section h4 {
+    color: var(--text);
+    font-size: 16px;
+    margin-bottom: 8px;
+  }
+  .case-section p {
+    color: var(--text-muted);
+    font-size: 14px;
+    line-height: 1.6;
+  }
+  .case-section ul {
+    list-style: disc;
+    padding-left: 20px;
+    color: var(--text-muted);
+    font-size: 14px;
+    line-height: 1.6;
+  }
+
+  .use-case-box {
+    background: var(--bg-card);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 16px;
+  }
+  .use-case-box h4 {
+    color: var(--text);
+    font-size: 16px;
+    margin-bottom: 8px;
+    font-weight: 600;
+  }
+  .use-case-box p {
+    color: var(--text-muted);
+    font-size: 14px;
+    line-height: 1.6;
+  }
+
+  .grid-cols-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 24px; width: 100%; max-width: 1100px; }
+  .grid-cols-4 { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 24px; width: 100%; max-width: 1100px; }
+
+  @media (max-width: 900px) {
+    .slide { padding: 40px 32px; }
+    h1 { font-size: 36px; }
+    h2 { font-size: 28px; }
+    .grid-cols-3, .grid-cols-4 { grid-template-columns: 1fr 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div class="progress-bar" id="progressBar"></div>
+<div class="slide-counter" id="slideCounter"></div>
+<a href="/" class="back-btn" title="Back to presentations">&larr;</a>
+<button class="nav-btn nav-prev" onclick="prevSlide()">&#8592;</button>
+<button class="nav-btn nav-next" onclick="nextSlide()">&#8594;</button>
+
+<div class="deck" id="deck">
+
+<!-- SLIDE 1: TITLE -->
+<div class="slide slide-title text-center">
+  <h1><span class="gradient-text">Pierian Digital & AI Solutions</span></h1>
+</div>
+
+<!-- SLIDE 2: TABLE OF CONTENTS -->
+<div class="slide">
+  <div class="full-width">
+    <h2 style="color: var(--text); margin-bottom: 40px;">Table of contents</h2>
+    <div class="toc-item">
+      <span class="toc-number">01</span>
+      <span class="toc-line">Introduction</span>
+    </div>
+    <div class="toc-item">
+      <span class="toc-number">02</span>
+      <span class="toc-line">Pierian AI Approach & Solution Stack</span>
+    </div>
+    <div class="toc-item">
+      <span class="toc-number">03</span>
+      <span class="toc-line">Use Case 1: AI in Accounts Payable & PO</span>
+    </div>
+    <div class="toc-item">
+      <span class="toc-number">04</span>
+      <span class="toc-line">Use Cases : AI in Analytics</span>
+    </div>
+    <div class="toc-item">
+      <span class="toc-number">05</span>
+      <span class="toc-line">Use Cases : AI in HyperAutomation</span>
+    </div>
+    <div class="toc-item">
+      <span class="toc-number">06</span>
+      <span class="toc-line">Discussion on Next steps</span>
+    </div>
+  </div>
+</div>
+
+<!-- SLIDE 3: WE ARE PIERIAN -->
+<div class="slide">
+  <div class="full-width" style="display: grid; grid-template-columns: 1fr 1fr; gap: 60px; align-items: start;">
+    <div>
+      <h2 style="color: var(--text); margin-bottom: 24px;">We are Pierian</h2>
+      <p style="color: var(--text-muted); font-size: 15px; line-height: 1.8; margin-bottom: 24px;">An AI-driven global business process management company. We help you reimagine and streamline operations with insights that elevate your decision-making and give you the competitive edge:</p>
+      <ul class="feature-list">
+        <li>Across finance and business operations by automating workflows</li>
+        <li>With AI and analytics to drive analytics-based decision-making</li>
+        <li>Ensuring compliance and risk management through AI-enabled data and process governance</li>
+        <li>Powering your shift away from cost-centric operations to value-led operations</li>
+      </ul>
+    </div>
+    <div style="text-align: center;"></div>
+  </div>
+</div>
+
+<!-- SLIDE 4: PIERIAN AI APPROACH -->
+<div class="slide" style="background-image: url('/api/v1/media/4/bg_slide3.png');">
+  <div class="full-width">
+    <h2 style="color: var(--text); margin-bottom: 40px;">Pierian AI Approach</h2>
+    <p style="color: var(--text-muted); font-size: 15px; line-height: 1.8; max-width: 800px;">Pierian has building blocks with capability and solutions to turn unstructured, scattered data into valuable business insights, actions and automation</p>
+  </div>
+</div>
+
+<!-- SLIDE 5: PIERIAN SOLUTION STACK -->
+<div class="slide" style="background-image: url('/api/v1/media/4/bg_slide4.png');">
+  <div class="full-width">
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 60px; align-items: start;">
+      <div>
+        <h2 style="color: var(--text); margin-bottom: 24px;">Pierian Solution Stack</h2>
+      </div>
+      <ul class="feature-list" style="margin-top: 0;">
+        <li>AI Infrastructure on premises and cloud</li>
+        <li>Custom App development framework</li>
+        <li>Pierian App Store (authenticated with o365 or SSO login)</li>
+        <li>Tracking and Ticketing tools</li>
+        <li>Visualization & reporting platform</li>
+        <li>Automated Azure Data Factory Pipelines</li>
+        <li>Workflow Solutions</li>
+        <li>Any-to-Any Integration Servers</li>
+        <li>AI Co-pilots</li>
+        <li>Document Utilities (RAG, Excel Splitter, Document Chunker, Document Summarizer, Excel to PDF, PDF to Excel, PDF to DB, Bank Statement extractor to DB)</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- SLIDE 6: TECHNOLOGY -->
+<div class="slide" style="background-image: url('/api/v1/media/4/bg_slide5.png');">
+  <div class="full-width">
+    <h2 style="color: var(--text); margin-bottom: 48px;">Technology</h2>
+    <div class="grid-cols-4">
+      <div style="text-align: center;">
+        <div style="font-size: 32px; margin-bottom: 12px;">☁️</div>
+        <div style="font-weight: 600; margin-bottom: 4px;">MS Azure Data Factory</div>
+      </div>
+      <div style="text-align: center;">
+        <div style="font-size: 32px; margin-bottom: 12px;">📊</div>
+        <div style="font-weight: 600; margin-bottom: 4px;">MS Fabric</div>
+      </div>
+      <div style="text-align: center;">
+        <div style="font-size: 32px; margin-bottom: 12px;">📈</div>
+        <div style="font-weight: 600; margin-bottom: 4px;">Power BI</div>
+      </div>
+      <div style="text-align: center;">
+        <div style="font-size: 32px; margin-bottom: 12px;">🤖</div>
+        <div style="font-weight: 600; margin-bottom: 4px;">Anthropic</div>
+      </div>
+      <div style="text-align: center;">
+        <div style="font-size: 32px; margin-bottom: 12px;">⚙️</div>
+        <div style="font-weight: 600; margin-bottom: 4px;">N8nWorkflows</div>
+      </div>
+      <div style="text-align: center;">
+        <div style="font-size: 32px; margin-bottom: 12px;">📱</div>
+        <div style="font-weight: 600; margin-bottom: 4px;">Zoho Business Suite</div>
+      </div>
+      <div style="text-align: center;">
+        <div style="font-size: 32px; margin-bottom: 12px;">⚛️</div>
+        <div style="font-weight: 600; margin-bottom: 4px;">React.js</div>
+      </div>
+      <div style="text-align: center;">
+        <div style="font-size: 32px; margin-bottom: 12px;">🔗</div>
+        <div style="font-weight: 600; margin-bottom: 4px;">Model Context Protocol</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SLIDE 7: PIERIAN APP STORE -->
+<div class="slide" style="background-image: url('/api/v1/media/4/bg_slide6.png');">
+  <div class="full-width" style="display: grid; grid-template-columns: 1fr 1fr; gap: 60px; align-items: center;">
+    <div>
+      <h2 style="color: var(--text); margin-bottom: 32px;">Pierian App Store</h2>
+      <p style="color: var(--text); font-size: 16px; line-height: 1.8; margin-bottom: 24px;">The Pierian App store is a full stack collection of AI and Digital Applications that are of use to every professional in the enterprise across functions.</p>
+      <p style="color: var(--text); font-size: 16px; line-height: 1.8;">The app store is offered to Customers by Pierian in conjunction with specialized services.</p>
+    </div>
+    <div></div>
+  </div>
+</div>
+
+<!-- SLIDE 8: USE CASE - ACCOUNTS PAYABLE -->
+<div class="slide" style="background-image: url('/api/v1/media/4/bg_slide7.png');">
+  <div class="full-width">
+    <h2 style="color: var(--text); margin-bottom: 40px;">Use Case: Accounts Payable using AI/ML</h2>
+  </div>
+</div>
+
+<!-- SLIDE 9: PO FLOW -->
+<div class="slide" style="background-image: url('/api/v1/media/4/bg_slide8.png');">
+  <div class="full-width">
+    <h2 style="color: var(--text); margin-bottom: 40px;">PO Flow using AI/ML</h2>
+  </div>
+</div>
+
+<!-- SLIDE 10: INVOICE PROCESSING -->
+<div class="slide" style="background-image: url('/api/v1/media/4/bg_slide9.png');">
+  <div class="full-width">
+    <h2 style="color: var(--text); margin-bottom: 40px;">Invoice Processing flow – using AI/ML</h2>
+  </div>
+</div>
+
+<!-- SLIDE 11: RECEIVING FLOW -->
+<div class="slide" style="background-image: url('/api/v1/media/4/bg_slide10.png');">
+  <div class="full-width">
+    <h2 style="color: var(--text); margin-bottom: 40px;">Receiving flow – using AI/ML</h2>
+  </div>
+</div>
+
+<!-- SLIDE 12: DATA & ANALYTICS -->
+<div class="slide">
+  <div class="full-width">
+    <h2 style="color: var(--text); margin-bottom: 32px;">Data & Analytics</h2>
+    <ul class="feature-list">
+      <li style="font-size: 16px;">Analytics as a Service</li>
+      <li style="font-size: 16px;">Data Management and Integration</li>
+    </ul>
+  </div>
+</div>
+
+<!-- SLIDE 13: DATA & ANALYTICS USE CASES -->
+<div class="slide">
+  <div class="full-width">
+    <h2 style="color: var(--text); margin-bottom: 40px;">Data & Analytics – Use Cases</h2>
+    <div class="grid-2x2">
+      <div class="use-case-box">
+        <h4>Fingertips for eCommerce</h4>
+        <p>AI Analysis of eCommerce, ERP data to determine profitability, and complete MIS & guidance for P2P and O2C</p>
+      </div>
+      <div class="use-case-box">
+        <h4>Travel Management System</h4>
+        <p>Comprehensive and Integrated Travel management System, with integration of Sabre data to provide daily insights on bookings, revenue, and profitability across Air, Car, and Hotels.</p>
+      </div>
+      <div class="use-case-box">
+        <h4>Revenue Leakage Identification</h4>
+        <p>Analysis of vast amounts of data from multiple sources to be able to identify revenue leakage and credit note causal analysis</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SLIDE 14: ECOMMERCE CASE STUDY -->
+<div class="slide">
+  <div class="full-width">
+    <h2 style="color: var(--text); margin-bottom: 32px;">Sample Use Case: Fingertips for eCommerce Marketplace Sellers</h2>
+    <div class="case-section">
+      <h4>Background</h4>
+      <ul>
+        <li>An e-commerce company struggled with tracking performance and managing inventory effectively.</li>
+        <li>Lack of real-time visibility into critical metrics hindered decision-making.</li>
+        <li>Manual reporting made it difficult to optimize operations.</li>
+        <li>As a result, strategic planning and growth were consistently impacted.</li>
+      </ul>
+    </div>
+    <div class="case-section">
+      <h4>Challenges</h4>
+      <ul>
+        <li>Data was scattered across sales, inventory, pricing, and liabilities systems.</li>
+        <li>Manual analysis limited actionable insights and slowed responsiveness.</li>
+        <li>Decisions were often delayed due to lack of real-time visibility.</li>
+        <li>The business faced inefficiencies that reduced competitiveness.</li>
+      </ul>
+    </div>
+    <div class="case-section">
+      <h4>Solution: Fingertips with Power BI</h4>
+      <ul>
+        <li>An analytics platform provided a centralized KPI dashboard for visibility.</li>
+        <li>Dynamic visualizations enabled trend detection and performance monitoring.</li>
+      </ul>
+    </div>
+    <div class="case-section">
+      <h4>Benefit</h4>
+      <ul>
+        <li>Delivered a unified view of critical business metrics and trends.</li>
+        <li>Enabled real-time, data-driven strategic and operational decisions.</li>
+        <li>Automated reporting cut manual workload and improved efficiency.</li>
+        <li>Optimized inventory, pricing, and liabilities management to drive growth.</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- SLIDE 15: LOGISTICS RECONCILIATION -->
+<div class="slide">
+  <div class="full-width">
+    <h2 style="color: var(--text); margin-bottom: 32px;">Use Case: Logistics Payment Reconciliation</h2>
+    <div class="case-section">
+      <h4>Background</h4>
+      <ul>
+        <li>Ecommerce marketplace Operates with 10-15 logistics partners, managing thousands of shipments daily.</li>
+        <li>Variables include pin code, shipment mode, weight, zone, and service level.</li>
+      </ul>
+    </div>
+    <div class="case-section">
+      <h4>Challenges</h4>
+      <ul>
+        <li>Contract complexity – thousands of rate combinations, frequently changing</li>
+        <li>Diverse scenarios with calculations for partshipments, failed deliveries, returns, surcharges and COD</li>
+        <li>Huge volume needing validation with lengthy resolution cycles</li>
+      </ul>
+    </div>
+    <div class="case-section">
+      <h4>Solution: AI Based Logistics Reconciliation Tool</h4>
+      <ul>
+        <li>Automated data ingestion, dynamic contract management, AI Powered audit engine that automates dispute handling and tracks resolution</li>
+      </ul>
+    </div>
+    <div class="case-section">
+      <h4>Benefit</h4>
+      <ul>
+        <li><strong>Error Detection & Cost Recovery:</strong> Identified significant overpayments, safeguarding 2-5% of monthly freight spend. Enhanced transparency and reduced friction.</li>
+        <li><strong>Efficiency Boost:</strong> Reduced reconciliation time from weeks to 1-2 days, automating 75-85% of invoice lines.</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- SLIDE 16: OTHER AI USE CASES -->
+<div class="slide">
+  <div class="full-width">
+    <h2 style="color: var(--text); margin-bottom: 40px;">Other AI use cases at Pierian</h2>
+    <div class="grid-cols-4">
+      <div class="use-case-box" style="background: var(--bg-card2); border: none;">
+        <h4 style="color: var(--text);">Payment Gateway Recon</h4>
+        <p>Daily reconciliation of data from different payment gateways, with bank records and Orders from ERP</p>
+      </div>
+      <div class="use-case-box" style="background: var(--bg-card2); border: none;">
+        <h4 style="color: var(--text);">Logistics Recon</h4>
+        <p>Reconciliation of shipment invoices from logistics providers with shipment data from ERP and rate card</p>
+      </div>
+      <div class="use-case-box" style="background: var(--bg-card2); border: none;">
+        <h4 style="color: var(--text);">Vendor Support & Analysis</h4>
+        <p>AI Analysis of Key Account Manager interactions with Vendors and identifying improvements and actions needed to improve service levels</p>
+      </div>
+      <div class="use-case-box" style="background: var(--bg-card2); border: none;">
+        <h4 style="color: var(--text);">AI Student Counsellor at a University</h4>
+        <p>An AI Agent to assist prospective and existing students offering admission assistance and student assistance for transactions</p>
+      </div>
+      <div class="use-case-box" style="background: var(--bg-card2); border: none;">
+        <h4 style="color: var(--text);">AP & Vendor SOA Reconciliation</h4>
+        <p>Automated processing of Accounts payable using a workflow built with multi-functional agents</p>
+      </div>
+      <div class="use-case-box" style="background: var(--bg-card2); border: none;">
+        <h4 style="color: var(--text);">Accounts Receivable</h4>
+        <p>Automated workflows for Follow up and communication with customers on unpaid ageing invoices</p>
+      </div>
+      <div class="use-case-box" style="background: var(--bg-card2); border: none;">
+        <h4 style="color: var(--text);">Credit Card Reconciliation</h4>
+        <p>Reconciliation of credit card statements and GL Accounting entries</p>
+      </div>
+      <div class="use-case-box" style="background: var(--bg-card2); border: none;">
+        <h4 style="color: var(--text);">Medical Billing Recon</h4>
+        <p>Reconciliation of Bank transfers and Hospital billing records with data from portals</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SLIDE 17: AGENTIC AI -->
+<div class="slide">
+  <div class="full-width">
+    <h2 style="color: var(--text); margin-bottom: 40px;">Agentic AI - Key Use Cases</h2>
+    <div class="grid-2x2">
+      <div class="use-case-box">
+        <h4>eCommerce Vendor Support & Analysis</h4>
+        <p>Agentic AI Support for Vendor Support. AI Analysis of interactions with Vendors to improve service levels</p>
+      </div>
+      <div class="use-case-box">
+        <h4>Employee Services Agent</h4>
+        <p>Agentic services for Employee services in IT, HR, Facilities and procurement</p>
+      </div>
+      <div class="use-case-box">
+        <h4>Finance Reconciliation Agent</h4>
+        <p>SOA, Vendor Reconciliation and GL Accounting entries</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div>
+
+<script>
+  let current = 0;
+  const slides = document.querySelectorAll('.slide');
+  const total = slides.length;
+
+  function show(idx) {
+    slides.forEach((s, i) => { s.classList.toggle('active', i === idx); });
+    document.getElementById('progressBar').style.width = ((idx + 1) / total * 100) + '%';
+    document.getElementById('slideCounter').textContent = (idx + 1) + ' / ' + total;
+  }
+
+  function nextSlide() { if (current < total - 1) { current++; show(current); } }
+  function prevSlide() { if (current > 0) { current--; show(current); } }
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); nextSlide(); }
+    if (e.key === 'ArrowLeft' || e.key === 'Backspace') { e.preventDefault(); prevSlide(); }
+    if (e.key === 'Home') { current = 0; show(current); }
+    if (e.key === 'End') { current = total - 1; show(current); }
+  });
+
+  let touchStartX = 0;
+  document.addEventListener('touchstart', (e) => { touchStartX = e.touches[0].clientX; });
+  document.addEventListener('touchend', (e) => {
+    const diff = touchStartX - e.changedTouches[0].clientX;
+    if (Math.abs(diff) > 50) { diff > 0 ? nextSlide() : prevSlide(); }
+  });
+
+  show(0);
+</script>
+</body>
+</html>

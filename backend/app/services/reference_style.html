@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Presentation</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --primary: #6366f1;
+    --primary-light: #818cf8;
+    --primary-dark: #4f46e5;
+    --accent: #06b6d4;
+    --accent2: #f59e0b;
+    --success: #10b981;
+    --danger: #ef4444;
+    --bg-dark: #0f172a;
+    --bg-card: #1e293b;
+    --bg-card2: #334155;
+    --text: #f1f5f9;
+    --text-muted: #94a3b8;
+    --gradient1: linear-gradient(135deg, #6366f1, #06b6d4);
+    --gradient2: linear-gradient(135deg, #f59e0b, #ef4444);
+    --gradient3: linear-gradient(135deg, #10b981, #06b6d4);
+  }
+
+  body {
+    font-family: 'Inter', -apple-system, sans-serif;
+    background: var(--bg-dark);
+    color: var(--text);
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
+  }
+
+  .deck { position: relative; width: 100vw; height: 100vh; }
+
+  .slide {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding: 60px 80px;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.5s ease, transform 0.5s ease;
+    transform: translateX(40px);
+    background: var(--bg-dark);
+  }
+  .slide.active {
+    opacity: 1;
+    visibility: visible;
+    transform: translateX(0);
+  }
+
+  .progress-bar {
+    position: fixed;
+    top: 0; left: 0;
+    height: 3px;
+    background: var(--gradient1);
+    transition: width 0.4s ease;
+    z-index: 100;
+  }
+
+  .slide-counter {
+    position: fixed;
+    bottom: 24px; right: 32px;
+    font-size: 13px;
+    color: var(--text-muted);
+    z-index: 100;
+    font-weight: 500;
+  }
+
+  .nav-btn {
+    position: fixed;
+    top: 50%;
+    transform: translateY(-50%);
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.1);
+    color: var(--text-muted);
+    width: 44px; height: 44px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 100;
+    transition: all 0.2s;
+    font-size: 18px;
+  }
+  .nav-btn:hover { background: rgba(255,255,255,0.12); color: #fff; }
+  .nav-prev { left: 20px; }
+  .nav-next { right: 20px; }
+
+  h1 { font-size: 56px; font-weight: 800; line-height: 1.1; letter-spacing: -1.5px; }
+  h2 { font-size: 40px; font-weight: 700; line-height: 1.2; letter-spacing: -1px; margin-bottom: 12px; }
+  h3 { font-size: 22px; font-weight: 600; margin-bottom: 8px; }
+  .subtitle { font-size: 20px; color: var(--text-muted); font-weight: 400; margin-top: 12px; line-height: 1.6; }
+  .tag {
+    display: inline-block;
+    padding: 6px 16px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    margin-bottom: 16px;
+  }
+  .tag-primary { background: rgba(99,102,241,0.15); color: var(--primary-light); }
+  .tag-accent { background: rgba(6,182,212,0.15); color: var(--accent); }
+  .tag-success { background: rgba(16,185,129,0.15); color: var(--success); }
+  .tag-warning { background: rgba(245,158,11,0.15); color: var(--accent2); }
+  .tag-danger { background: rgba(239,68,68,0.15); color: var(--danger); }
+
+  .gradient-text {
+    background: var(--gradient1);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .full-width { width: 100%; max-width: 1100px; }
+  .text-center { text-align: center; }
+  .mt-8 { margin-top: 8px; }
+  .mt-16 { margin-top: 16px; }
+  .mt-24 { margin-top: 24px; }
+  .mt-32 { margin-top: 32px; }
+  .mt-40 { margin-top: 40px; }
+
+  .cols { display: grid; gap: 20px; width: 100%; max-width: 1100px; }
+  .cols-2 { grid-template-columns: 1fr 1fr; }
+  .cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+  .cols-4 { grid-template-columns: 1fr 1fr 1fr 1fr; }
+
+  .card {
+    background: var(--bg-card);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 16px;
+    padding: 28px;
+    transition: transform 0.2s, box-shadow 0.2s;
+  }
+  .card:hover { transform: translateY(-2px); box-shadow: 0 8px 32px rgba(0,0,0,0.3); }
+  .card-icon {
+    width: 44px; height: 44px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    margin-bottom: 16px;
+  }
+  .card p { color: var(--text-muted); font-size: 14px; line-height: 1.6; margin-top: 8px; }
+  .card .card-title { font-size: 16px; font-weight: 600; color: var(--text); }
+
+  .icon-primary { background: rgba(99,102,241,0.15); }
+  .icon-accent { background: rgba(6,182,212,0.15); }
+  .icon-success { background: rgba(16,185,129,0.15); }
+  .icon-warning { background: rgba(245,158,11,0.15); }
+
+  .feature-list { list-style: none; padding: 0; }
+  .feature-list li {
+    padding: 10px 0;
+    font-size: 15px;
+    color: var(--text-muted);
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    line-height: 1.5;
+  }
+  .feature-list li::before {
+    content: '\2713';
+    color: var(--success);
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+
+  .module-layout {
+    display: grid;
+    grid-template-columns: 1fr 1.2fr;
+    gap: 40px;
+    width: 100%;
+    max-width: 1100px;
+    align-items: start;
+  }
+
+  .metric-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .metric-mini {
+    background: var(--bg-card);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 10px;
+    padding: 14px 16px;
+  }
+  .metric-mini .label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+  .metric-mini .value { font-size: 18px; font-weight: 700; margin-top: 4px; }
+
+  .divider {
+    width: 60px;
+    height: 3px;
+    background: var(--gradient1);
+    border-radius: 2px;
+    margin: 16px 0;
+  }
+
+  .tab-pills {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 16px;
+  }
+  .pill {
+    padding: 5px 14px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 500;
+    background: var(--bg-card2);
+    color: var(--text-muted);
+    border: 1px solid rgba(255,255,255,0.06);
+  }
+
+  .cta-box {
+    background: var(--gradient1);
+    border-radius: 20px;
+    padding: 48px 64px;
+    text-align: center;
+    max-width: 700px;
+  }
+  .cta-box h2 { color: #fff; margin-bottom: 12px; }
+  .cta-box p { color: rgba(255,255,255,0.85); font-size: 18px; line-height: 1.6; }
+
+  .kpi-strip {
+    display: flex;
+    gap: 16px;
+    width: 100%;
+    max-width: 1100px;
+  }
+  .kpi-item {
+    flex: 1;
+    background: var(--bg-card);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 12px;
+    padding: 16px 20px;
+    text-align: center;
+  }
+  .kpi-value { font-size: 28px; font-weight: 700; }
+  .kpi-label { font-size: 12px; color: var(--text-muted); margin-top: 4px; text-transform: uppercase; }
+
+  .chart-placeholder {
+    background: var(--bg-card);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 12px;
+    padding: 20px;
+  }
+  .chart-placeholder .chart-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-muted);
+    margin-bottom: 12px;
+  }
+  .chart-bar-group { display: flex; flex-direction: column; gap: 8px; }
+  .chart-bar {
+    height: 20px;
+    border-radius: 6px;
+    position: relative;
+  }
+  .chart-bar span {
+    position: absolute;
+    right: 8px;
+    top: 2px;
+    font-size: 11px;
+    font-weight: 600;
+    color: rgba(255,255,255,0.8);
+  }
+
+  .problem-card {
+    background: var(--bg-card);
+    border-left: 3px solid var(--danger);
+    border-radius: 0 12px 12px 0;
+    padding: 20px 24px;
+    margin-bottom: 12px;
+    max-width: 1100px;
+    width: 100%;
+  }
+
+  .slide-title { position: relative; }
+  .slide-title::before {
+    content: '';
+    position: absolute;
+    top: -100px; right: -100px;
+    width: 500px; height: 500px;
+    background: radial-gradient(circle, rgba(99,102,241,0.12) 0%, transparent 70%);
+    border-radius: 50%;
+    pointer-events: none;
+  }
+
+  /* Back button */
+  .back-btn {
+    position: fixed;
+    top: 16px; left: 16px;
+    z-index: 100;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.1);
+    color: var(--text-muted);
+    width: 40px; height: 40px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-size: 16px;
+    text-decoration: none;
+  }
+  .back-btn:hover { background: rgba(255,255,255,0.12); color: #fff; }
+
+  /* Slide image display */
+  .slide-image {
+    max-width: 100%;
+    max-height: 60vh;
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+    object-fit: contain;
+  }
+
+  @media (max-width: 900px) {
+    .slide { padding: 40px 32px; }
+    h1 { font-size: 36px; }
+    h2 { font-size: 28px; }
+    .cols-3, .cols-4 { grid-template-columns: 1fr 1fr; }
+    .module-layout { grid-template-columns: 1fr; }
+    .kpi-strip { flex-wrap: wrap; }
+  }
+</style>
+</head>
+<body>
+
+<div class="progress-bar" id="progressBar"></div>
+<div class="slide-counter" id="slideCounter"></div>
+<a href="/" class="back-btn" title="Back to presentations">&larr;</a>
+<button class="nav-btn nav-prev" onclick="prevSlide()">&#8592;</button>
+<button class="nav-btn nav-next" onclick="nextSlide()">&#8594;</button>
+
+<div class="deck" id="deck">
+
+<!-- SLIDE 1: TITLE -->
+<div class="slide slide-title text-center">
+  <h1><span class="gradient-text">Presentation Title</span></h1>
+  <p class="subtitle">Subtitle goes here</p>
+</div>
+
+<!-- SLIDE 2: CONTENT EXAMPLE -->
+<div class="slide">
+  <div class="full-width">
+    <span class="tag tag-primary">Section</span>
+    <h2>Content Slide</h2>
+    <div class="cols cols-3 mt-32">
+      <div class="card">
+        <div class="card-icon icon-primary">icon</div>
+        <div class="card-title">Feature</div>
+        <p>Description text</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div>
+
+<script>
+  let current = 0;
+  const slides = document.querySelectorAll('.slide');
+  const total = slides.length;
+
+  function show(idx) {
+    slides.forEach((s, i) => { s.classList.toggle('active', i === idx); });
+    document.getElementById('progressBar').style.width = ((idx + 1) / total * 100) + '%';
+    document.getElementById('slideCounter').textContent = (idx + 1) + ' / ' + total;
+  }
+
+  function nextSlide() { if (current < total - 1) { current++; show(current); } }
+  function prevSlide() { if (current > 0) { current--; show(current); } }
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); nextSlide(); }
+    if (e.key === 'ArrowLeft' || e.key === 'Backspace') { e.preventDefault(); prevSlide(); }
+    if (e.key === 'Home') { current = 0; show(current); }
+    if (e.key === 'End') { current = total - 1; show(current); }
+  });
+
+  let touchStartX = 0;
+  document.addEventListener('touchstart', (e) => { touchStartX = e.touches[0].clientX; });
+  document.addEventListener('touchend', (e) => {
+    const diff = touchStartX - e.changedTouches[0].clientX;
+    if (Math.abs(diff) > 50) { diff > 0 ? nextSlide() : prevSlide(); }
+  });
+
+  show(0);
+</script>
+</body>
+</html>
