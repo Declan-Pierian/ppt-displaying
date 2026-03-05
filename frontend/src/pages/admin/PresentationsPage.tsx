@@ -109,7 +109,7 @@ export default function PresentationsPage() {
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
                     {pres.status === "ready" && (
-                      <a href={`/view/${pres.id}`} target="_blank" rel="noopener noreferrer" className="btn-icon" title="View"><ExternalLink size={18} /></a>
+                      <a href={`/api/v1/presentations/${pres.id}/webpage`} target="_blank" rel="noopener noreferrer" className="btn-icon" title="View"><ExternalLink size={18} /></a>
                     )}
                     <button onClick={() => toggleActive(pres.id, pres.is_active)} className={`btn-icon`} title={pres.is_active ? "Hide" : "Show"}>
                       {pres.is_active ? <EyeOff size={18} /> : <Eye size={18} />}

@@ -176,7 +176,7 @@ Use these exact URLs for any images you include in the HTML:
 ## CRITICAL INSTRUCTIONS
 1. Output ONLY the raw HTML code. Start with <!DOCTYPE html> and end with </html>. No markdown fencing, no explanations before or after.
 2. Each slide becomes one full-screen page with animated transitions.
-3. Include: progress bar at top, slide counter at bottom-right, circular prev/next arrows at left/right, keyboard navigation (arrows, space, Home, End), touch swipe support.
+3. NAVIGATION: Use full-height side zones (not small circular buttons). The left and right edges of the screen (80px wide, full height) should be clickable navigation areas that show a subtle gradient + arrow icon on hover. Also include keyboard navigation (arrows, space, Home, End) and touch swipe support.
 4. DO NOT just display slide images. Extract and recreate all text content as proper HTML elements.
 5. For images FROM the presentation (logos, photos, diagrams), use <img> tags with the URLs listed above.
 6. If a slide has a background image, use it as that slide's CSS background (background-image with cover).
@@ -185,6 +185,15 @@ Use these exact URLs for any images you include in the HTML:
 9. The HTML must be completely self-contained (all CSS in <style>, all JS in <script>).
 10. Include a back button (top-left, linking to "/") so users can return to the presentation list.
 11. Adapt layouts to content: title slides get centered hero treatment, content-heavy slides get multi-column layouts, list slides get feature-list styling.
+12. TOOLBAR (top-right): Include a floating toolbar with these controls:
+    - Zoom In (+), Zoom Out (-), zoom percentage label, Reset zoom button
+    - A separator
+    - Pen tool button (red ink, 3px, for drawing/annotating on the slide)
+    - Highlighter button (yellow, 20px, semi-transparent, for highlighting)
+    - Clear drawings button
+    Use a canvas overlay for drawing. When pen/highlight is active, keyboard navigation should be disabled. Drawings clear when navigating to a new slide.
+13. Wrap each slide's content inside a <div class="zoom-wrapper"> so zoom scales the content. The zoom-wrapper should have transform-origin: center center and transition on transform.
+14. Include a progress bar at top and slide counter at bottom-right.
 
 ## Slides
 Below I will show you each slide as a rendered image (so you can see the exact visual design and layout) followed by the extracted text content (for accuracy).

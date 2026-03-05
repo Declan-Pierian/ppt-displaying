@@ -1,6 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import HomePage from "./pages/viewer/HomePage";
-import SlideViewer from "./pages/viewer/SlideViewer";
 import LoginPage from "./pages/admin/LoginPage";
 import AdminLayout from "./pages/admin/AdminLayout";
 import UploadPage from "./pages/admin/UploadPage";
@@ -12,7 +11,6 @@ export default function App() {
       <Routes>
         {/* Public viewer routes */}
         <Route path="/" element={<HomePage />} />
-        <Route path="/view/:id" element={<SlideViewer />} />
 
         {/* Admin routes */}
         <Route path="/admin/login" element={<LoginPage />} />

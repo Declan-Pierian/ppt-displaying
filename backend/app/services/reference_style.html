@@ -50,6 +50,7 @@
     transition: opacity 0.5s ease, transform 0.5s ease;
     transform: translateX(40px);
     background: var(--bg-dark);
+    overflow: hidden;
   }
   .slide.active {
     opacity: 1;
@@ -75,26 +76,35 @@
     font-weight: 500;
   }
 
-  .nav-btn {
+  /* Full-side navigation zones (cover left/right edges) */
+  .nav-zone {
     position: fixed;
-    top: 50%;
-    transform: translateY(-50%);
-    background: rgba(255,255,255,0.06);
-    border: 1px solid rgba(255,255,255,0.1);
-    color: var(--text-muted);
-    width: 44px; height: 44px;
-    border-radius: 50%;
+    top: 0;
+    bottom: 0;
+    width: 80px;
+    z-index: 90;
+    cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-    cursor: pointer;
-    z-index: 100;
-    transition: all 0.2s;
-    font-size: 18px;
+    opacity: 0;
+    transition: opacity 0.3s;
   }
-  .nav-btn:hover { background: rgba(255,255,255,0.12); color: #fff; }
-  .nav-prev { left: 20px; }
-  .nav-next { right: 20px; }
+  .nav-zone:hover { opacity: 1; }
+  .nav-zone-prev { left: 0; background: linear-gradient(to right, rgba(0,0,0,0.25), transparent); }
+  .nav-zone-next { right: 0; background: linear-gradient(to left, rgba(0,0,0,0.25), transparent); }
+  .nav-zone-icon {
+    width: 44px; height: 44px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,255,255,0.15);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: 18px;
+    backdrop-filter: blur(8px);
+  }
 
   h1 { font-size: 56px; font-weight: 800; line-height: 1.1; letter-spacing: -1.5px; }
   h2 { font-size: 40px; font-weight: 700; line-height: 1.2; letter-spacing: -1px; margin-bottom: 12px; }
@@ -209,12 +219,7 @@
     margin: 16px 0;
   }
 
-  .tab-pills {
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
-    margin-top: 16px;
-  }
+  .tab-pills { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
   .pill {
     padding: 5px 14px;
     border-radius: 20px;
@@ -235,12 +240,7 @@
   .cta-box h2 { color: #fff; margin-bottom: 12px; }
   .cta-box p { color: rgba(255,255,255,0.85); font-size: 18px; line-height: 1.6; }
 
-  .kpi-strip {
-    display: flex;
-    gap: 16px;
-    width: 100%;
-    max-width: 1100px;
-  }
+  .kpi-strip { display: flex; gap: 16px; width: 100%; max-width: 1100px; }
   .kpi-item {
     flex: 1;
     background: var(--bg-card);
@@ -258,26 +258,10 @@
     border-radius: 12px;
     padding: 20px;
   }
-  .chart-placeholder .chart-title {
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--text-muted);
-    margin-bottom: 12px;
-  }
+  .chart-placeholder .chart-title { font-size: 13px; font-weight: 600; color: var(--text-muted); margin-bottom: 12px; }
   .chart-bar-group { display: flex; flex-direction: column; gap: 8px; }
-  .chart-bar {
-    height: 20px;
-    border-radius: 6px;
-    position: relative;
-  }
-  .chart-bar span {
-    position: absolute;
-    right: 8px;
-    top: 2px;
-    font-size: 11px;
-    font-weight: 600;
-    color: rgba(255,255,255,0.8);
-  }
+  .chart-bar { height: 20px; border-radius: 6px; position: relative; }
+  .chart-bar span { position: absolute; right: 8px; top: 2px; font-size: 11px; font-weight: 600; color: rgba(255,255,255,0.8); }
 
   .problem-card {
     background: var(--bg-card);
@@ -300,12 +284,63 @@
     pointer-events: none;
   }
 
+  .slide-image {
+    max-width: 100%;
+    max-height: 60vh;
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+    object-fit: contain;
+  }
+
+  /* ---- TOOLBAR (top-right): zoom + pen ---- */
+  .toolbar {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    z-index: 200;
+    display: flex;
+    gap: 6px;
+    background: rgba(30,41,59,0.85);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 12px;
+    padding: 6px;
+  }
+  .toolbar-btn {
+    width: 36px; height: 36px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 16px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+  }
+  .toolbar-btn:hover { background: rgba(255,255,255,0.1); color: #fff; }
+  .toolbar-btn.active { background: var(--primary); color: #fff; }
+  .toolbar-sep { width: 1px; background: rgba(255,255,255,0.1); margin: 4px 2px; }
+  .zoom-label { font-size: 11px; color: var(--text-muted); display: flex; align-items: center; padding: 0 6px; font-weight: 600; min-width: 40px; justify-content: center; }
+
+  /* Drawing canvas overlay */
+  .draw-canvas {
+    position: fixed;
+    inset: 0;
+    z-index: 150;
+    cursor: crosshair;
+    pointer-events: none;
+  }
+  .draw-canvas.active { pointer-events: auto; }
+
   /* Back button */
   .back-btn {
     position: fixed;
     top: 16px; left: 16px;
-    z-index: 100;
-    background: rgba(255,255,255,0.06);
+    z-index: 200;
+    background: rgba(30,41,59,0.85);
+    backdrop-filter: blur(12px);
     border: 1px solid rgba(255,255,255,0.1);
     color: var(--text-muted);
     width: 40px; height: 40px;
@@ -320,13 +355,16 @@
   }
   .back-btn:hover { background: rgba(255,255,255,0.12); color: #fff; }
 
-  /* Slide image display */
-  .slide-image {
-    max-width: 100%;
-    max-height: 60vh;
-    border-radius: 12px;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.3);
-    object-fit: contain;
+  /* Zoom wrapper */
+  .zoom-wrapper {
+    transform-origin: center center;
+    transition: transform 0.3s ease;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
   }
 
   @media (max-width: 900px) {
@@ -336,6 +374,7 @@
     .cols-3, .cols-4 { grid-template-columns: 1fr 1fr; }
     .module-layout { grid-template-columns: 1fr; }
     .kpi-strip { flex-wrap: wrap; }
+    .nav-zone { width: 50px; }
   }
 </style>
 </head>
@@ -344,32 +383,34 @@
 <div class="progress-bar" id="progressBar"></div>
 <div class="slide-counter" id="slideCounter"></div>
 <a href="/" class="back-btn" title="Back to presentations">&larr;</a>
-<button class="nav-btn nav-prev" onclick="prevSlide()">&#8592;</button>
-<button class="nav-btn nav-next" onclick="nextSlide()">&#8594;</button>
+
+<!-- Full-side navigation zones -->
+<div class="nav-zone nav-zone-prev" onclick="prevSlide()"><div class="nav-zone-icon">&#8592;</div></div>
+<div class="nav-zone nav-zone-next" onclick="nextSlide()"><div class="nav-zone-icon">&#8594;</div></div>
+
+<!-- Toolbar: zoom + pen -->
+<div class="toolbar">
+  <button class="toolbar-btn" onclick="zoomOut()" title="Zoom out">&#8722;</button>
+  <span class="zoom-label" id="zoomLabel">100%</span>
+  <button class="toolbar-btn" onclick="zoomIn()" title="Zoom in">&#43;</button>
+  <button class="toolbar-btn" onclick="resetZoom()" title="Reset zoom">&#8634;</button>
+  <div class="toolbar-sep"></div>
+  <button class="toolbar-btn" id="penBtn" onclick="togglePen()" title="Pen tool">&#9998;</button>
+  <button class="toolbar-btn" id="highlightBtn" onclick="toggleHighlight()" title="Highlighter">&#9632;</button>
+  <button class="toolbar-btn" onclick="clearDrawing()" title="Clear drawings">&#10060;</button>
+</div>
+
+<!-- Drawing canvas -->
+<canvas class="draw-canvas" id="drawCanvas"></canvas>
 
 <div class="deck" id="deck">
-
-<!-- SLIDE 1: TITLE -->
+<!-- SLIDE 1 -->
 <div class="slide slide-title text-center">
-  <h1><span class="gradient-text">Presentation Title</span></h1>
-  <p class="subtitle">Subtitle goes here</p>
-</div>
-
-<!-- SLIDE 2: CONTENT EXAMPLE -->
-<div class="slide">
-  <div class="full-width">
-    <span class="tag tag-primary">Section</span>
-    <h2>Content Slide</h2>
-    <div class="cols cols-3 mt-32">
-      <div class="card">
-        <div class="card-icon icon-primary">icon</div>
-        <div class="card-title">Feature</div>
-        <p>Description text</p>
-      </div>
-    </div>
+  <div class="zoom-wrapper">
+    <h1><span class="gradient-text">Presentation Title</span></h1>
+    <p class="subtitle">Subtitle goes here</p>
   </div>
 </div>
-
 </div>
 
 <script>
@@ -381,16 +422,21 @@
     slides.forEach((s, i) => { s.classList.toggle('active', i === idx); });
     document.getElementById('progressBar').style.width = ((idx + 1) / total * 100) + '%';
     document.getElementById('slideCounter').textContent = (idx + 1) + ' / ' + total;
+    clearDrawing();
   }
 
   function nextSlide() { if (current < total - 1) { current++; show(current); } }
   function prevSlide() { if (current > 0) { current--; show(current); } }
 
   document.addEventListener('keydown', (e) => {
+    if (drawMode) return;
     if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); nextSlide(); }
     if (e.key === 'ArrowLeft' || e.key === 'Backspace') { e.preventDefault(); prevSlide(); }
     if (e.key === 'Home') { current = 0; show(current); }
     if (e.key === 'End') { current = total - 1; show(current); }
+    if (e.key === '+' || e.key === '=') { e.preventDefault(); zoomIn(); }
+    if (e.key === '-') { e.preventDefault(); zoomOut(); }
+    if (e.key === '0') { e.preventDefault(); resetZoom(); }
   });
 
   let touchStartX = 0;
@@ -399,6 +445,72 @@
     const diff = touchStartX - e.changedTouches[0].clientX;
     if (Math.abs(diff) > 50) { diff > 0 ? nextSlide() : prevSlide(); }
   });
+
+  // ---- ZOOM ----
+  let zoomLevel = 100;
+  function applyZoom() {
+    document.querySelectorAll('.zoom-wrapper').forEach(w => {
+      w.style.transform = 'scale(' + (zoomLevel / 100) + ')';
+    });
+    document.getElementById('zoomLabel').textContent = zoomLevel + '%';
+  }
+  function zoomIn() { if (zoomLevel < 200) { zoomLevel += 10; applyZoom(); } }
+  function zoomOut() { if (zoomLevel > 50) { zoomLevel -= 10; applyZoom(); } }
+  function resetZoom() { zoomLevel = 100; applyZoom(); }
+
+  // ---- PEN / HIGHLIGHTER ----
+  const canvas = document.getElementById('drawCanvas');
+  const ctx = canvas.getContext('2d');
+  let drawMode = null; // null | 'pen' | 'highlight'
+  let drawing = false;
+
+  function resizeCanvas() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+  }
+  window.addEventListener('resize', resizeCanvas);
+  resizeCanvas();
+
+  function togglePen() {
+    drawMode = drawMode === 'pen' ? null : 'pen';
+    document.getElementById('penBtn').classList.toggle('active', drawMode === 'pen');
+    document.getElementById('highlightBtn').classList.remove('active');
+    canvas.classList.toggle('active', !!drawMode);
+  }
+  function toggleHighlight() {
+    drawMode = drawMode === 'highlight' ? null : 'highlight';
+    document.getElementById('highlightBtn').classList.toggle('active', drawMode === 'highlight');
+    document.getElementById('penBtn').classList.remove('active');
+    canvas.classList.toggle('active', !!drawMode);
+  }
+  function clearDrawing() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  }
+
+  canvas.addEventListener('mousedown', (e) => {
+    if (!drawMode) return;
+    drawing = true;
+    ctx.beginPath();
+    ctx.moveTo(e.clientX, e.clientY);
+    if (drawMode === 'pen') {
+      ctx.strokeStyle = '#ef4444';
+      ctx.lineWidth = 3;
+      ctx.globalAlpha = 1;
+    } else {
+      ctx.strokeStyle = '#fbbf24';
+      ctx.lineWidth = 20;
+      ctx.globalAlpha = 0.35;
+    }
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+  });
+  canvas.addEventListener('mousemove', (e) => {
+    if (!drawing) return;
+    ctx.lineTo(e.clientX, e.clientY);
+    ctx.stroke();
+  });
+  canvas.addEventListener('mouseup', () => { drawing = false; ctx.globalAlpha = 1; });
+  canvas.addEventListener('mouseleave', () => { drawing = false; ctx.globalAlpha = 1; });
 
   show(0);
 </script>

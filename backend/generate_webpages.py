@@ -50,14 +50,14 @@ def main():
         media_dir = os.path.join(pres_dir, "media")
 
         if not os.path.exists(slides_json):
-            print(f"  [{pres_id}] SKIP — no slides.json found")
+            print(f"  [{pres_id}] SKIP -- no slides.json found")
             continue
 
         # Check if already generated
         existing = os.path.join(pres_dir, "webpage.html")
         if os.path.exists(existing):
             size = os.path.getsize(existing)
-            print(f"  [{pres_id}] Already has webpage.html ({size:,} bytes) — regenerating...")
+            print(f"  [{pres_id}] Already has webpage.html ({size:,} bytes) -- regenerating...")
 
         # Load title
         with open(slides_json, "r", encoding="utf-8") as f:
@@ -65,7 +65,7 @@ def main():
         title = data.get("title", "Untitled")
         slide_count = len(data.get("slides", []))
 
-        print(f"  [{pres_id}] \"{title}\" ({slide_count} slides) — generating...")
+        print(f"  [{pres_id}] \"{title}\" ({slide_count} slides) -- generating...")
         start = time.time()
 
         try:
@@ -74,13 +74,13 @@ def main():
 
             if result:
                 size = os.path.getsize(result)
-                print(f"  [{pres_id}] SUCCESS — {size:,} bytes in {elapsed:.1f}s")
-                print(f"           → {result}")
+                print(f"  [{pres_id}] SUCCESS -- {size:,} bytes in {elapsed:.1f}s")
+                print(f"           -> {result}")
             else:
-                print(f"  [{pres_id}] SKIPPED — generator returned None (check API key)")
+                print(f"  [{pres_id}] SKIPPED -- generator returned None (check API key)")
         except Exception as e:
             elapsed = time.time() - start
-            print(f"  [{pres_id}] FAILED in {elapsed:.1f}s — {e}")
+            print(f"  [{pres_id}] FAILED in {elapsed:.1f}s -- {e}")
 
         print()
 

@@ -51,12 +51,34 @@ def delete_presentation(
     db: Session = Depends(get_db),
     user: User = Depends(get_admin_user),
 ):
+    import shutil
+    import logging
+    logger = logging.getLogger(__name__)
+
     pres = db.query(Presentation).filter(Presentation.id == presentation_id).first()
     if not pres:
         raise HTTPException(status_code=404, detail="Presentation not found")
-    pres.is_active = False
+
+    # Delete files from disk
+    pres_dir = os.path.join(
+        settings.STORAGE_DIR, "presentations", str(presentation_id)
+    )
+    upload_dir = os.path.join(
+        settings.STORAGE_DIR, "uploads", str(presentation_id)
+    )
+
+    for dir_path in [pres_dir, upload_dir]:
+        if os.path.exists(dir_path):
+            try:
+                shutil.rmtree(dir_path)
+                logger.info("Deleted directory: %s", dir_path)
+            except Exception as e:
+                logger.error("Failed to delete %s: %s", dir_path, e)
+
+    # Delete from database
+    db.delete(pres)
     db.commit()
-    return {"detail": "Presentation deactivated"}
+    return {"detail": "Presentation deleted"}
 
 
 # --- Public endpoints ---
