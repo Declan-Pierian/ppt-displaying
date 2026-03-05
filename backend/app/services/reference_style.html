@@ -292,11 +292,11 @@
     object-fit: contain;
   }
 
-  /* ---- TOOLBAR (top-right): zoom + pen ---- */
+  /* ---- TOOLBAR (bottom-left): zoom + pen ---- */
   .toolbar {
     position: fixed;
-    top: 16px;
-    right: 16px;
+    bottom: 16px;
+    left: 16px;
     z-index: 200;
     display: flex;
     gap: 6px;
@@ -334,6 +334,10 @@
   }
   .draw-canvas.active { pointer-events: auto; }
 
+  /* Magnify mode cursor */
+  .magnify-mode .slide { cursor: zoom-in; }
+  .magnify-mode.zoomed-in .slide { cursor: zoom-out; }
+
   /* Back button */
   .back-btn {
     position: fixed;
@@ -354,6 +358,19 @@
     text-decoration: none;
   }
   .back-btn:hover { background: rgba(255,255,255,0.12); color: #fff; }
+
+  /* Company logo (top-right of every slide) */
+  .company-logo {
+    position: fixed;
+    top: 16px;
+    right: 20px;
+    z-index: 95;
+    height: 52px;
+    width: auto;
+    object-fit: contain;
+    pointer-events: none;
+    border-radius: 6px;
+  }
 
   /* Zoom wrapper */
   .zoom-wrapper {
@@ -383,6 +400,7 @@
 <div class="progress-bar" id="progressBar"></div>
 <div class="slide-counter" id="slideCounter"></div>
 <a href="/" class="back-btn" title="Back to presentations">&larr;</a>
+<img src="/api/v1/pierian-logo" alt="Pierian" class="company-logo" />
 
 <!-- Full-side navigation zones -->
 <div class="nav-zone nav-zone-prev" onclick="prevSlide()"><div class="nav-zone-icon">&#8592;</div></div>
@@ -390,6 +408,7 @@
 
 <!-- Toolbar: zoom + pen -->
 <div class="toolbar">
+  <button class="toolbar-btn" id="magBtn" onclick="toggleMagnify()" title="Magnifying glass (click to zoom area)">&#128269;</button>
   <button class="toolbar-btn" onclick="zoomOut()" title="Zoom out">&#8722;</button>
   <span class="zoom-label" id="zoomLabel">100%</span>
   <button class="toolbar-btn" onclick="zoomIn()" title="Zoom in">&#43;</button>
@@ -448,15 +467,70 @@
 
   // ---- ZOOM ----
   let zoomLevel = 100;
+  let magnifyMode = false;
+  let magnifyZoomed = false;
+
   function applyZoom() {
     document.querySelectorAll('.zoom-wrapper').forEach(w => {
+      if (!magnifyZoomed) {
+        w.style.transformOrigin = 'center center';
+      }
       w.style.transform = 'scale(' + (zoomLevel / 100) + ')';
     });
     document.getElementById('zoomLabel').textContent = zoomLevel + '%';
   }
   function zoomIn() { if (zoomLevel < 200) { zoomLevel += 10; applyZoom(); } }
   function zoomOut() { if (zoomLevel > 50) { zoomLevel -= 10; applyZoom(); } }
-  function resetZoom() { zoomLevel = 100; applyZoom(); }
+  function resetZoom() { zoomLevel = 100; magnifyZoomed = false; document.body.classList.remove('zoomed-in'); applyZoom(); }
+
+  // ---- MAGNIFYING GLASS ----
+  function toggleMagnify() {
+    magnifyMode = !magnifyMode;
+    document.getElementById('magBtn').classList.toggle('active', magnifyMode);
+    document.body.classList.toggle('magnify-mode', magnifyMode);
+    if (!magnifyMode) {
+      magnifyZoomed = false;
+      document.body.classList.remove('zoomed-in');
+      resetZoom();
+    }
+    // Disable pen/highlight if magnify is active
+    if (magnifyMode && drawMode) {
+      drawMode = null;
+      document.getElementById('penBtn').classList.remove('active');
+      document.getElementById('highlightBtn').classList.remove('active');
+      canvas.classList.remove('active');
+    }
+  }
+
+  document.addEventListener('click', (e) => {
+    if (!magnifyMode) return;
+    // Ignore clicks on toolbar, nav zones, back button
+    if (e.target.closest('.toolbar') || e.target.closest('.nav-zone') || e.target.closest('.back-btn')) return;
+
+    const activeSlide = document.querySelector('.slide.active');
+    if (!activeSlide) return;
+    const wrapper = activeSlide.querySelector('.zoom-wrapper');
+    if (!wrapper) return;
+
+    if (magnifyZoomed) {
+      // Zoom out — reset
+      magnifyZoomed = false;
+      document.body.classList.remove('zoomed-in');
+      zoomLevel = 100;
+      wrapper.style.transformOrigin = 'center center';
+      applyZoom();
+    } else {
+      // Zoom into the clicked area
+      const rect = activeSlide.getBoundingClientRect();
+      const xPct = ((e.clientX - rect.left) / rect.width * 100).toFixed(1);
+      const yPct = ((e.clientY - rect.top) / rect.height * 100).toFixed(1);
+      wrapper.style.transformOrigin = xPct + '% ' + yPct + '%';
+      magnifyZoomed = true;
+      document.body.classList.add('zoomed-in');
+      zoomLevel = 200;
+      applyZoom();
+    }
+  });
 
   // ---- PEN / HIGHLIGHTER ----
   const canvas = document.getElementById('drawCanvas');

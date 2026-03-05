@@ -185,6 +185,21 @@ def serve_webpage(presentation_id: int, db: Session = Depends(get_db)):
     return HTMLResponse(content=html_content)
 
 
+@router.get("/pierian-logo")
+def serve_pierian_logo():
+    """Serve the Pierian company logo."""
+    # Navigate from backend/app/api/v1/endpoints/ up to backend/
+    backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))))
+    logo_path = os.path.join(backend_dir, "pierian_image", "New_Pierian_Logo.jpg")
+    if not os.path.exists(logo_path):
+        raise HTTPException(status_code=404, detail="Logo not found")
+    return FileResponse(
+        logo_path,
+        media_type="image/jpeg",
+        headers={"Cache-Control": "public, max-age=604800"},
+    )
+
+
 @router.get("/media/{presentation_id}/{filename:path}")
 def serve_media(presentation_id: int, filename: str, db: Session = Depends(get_db)):
     media_path = os.path.join(

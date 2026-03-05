@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Eye, EyeOff, Trash2, ExternalLink, Loader2, RefreshCw, FileSliders, Layers, CheckCircle, Clock, AlertCircle } from "lucide-react";
+import { Eye, EyeOff, Trash2, ExternalLink, Loader2, RefreshCw, FileSliders, Layers, CheckCircle, Clock, AlertCircle, Globe, FileType } from "lucide-react";
 import api from "../../lib/api";
 import { formatDate } from "../../lib/slideUtils";
 import type { PresentationAdminMeta } from "../../types/slide";
@@ -98,8 +98,13 @@ export default function PresentationsPage() {
                       </span>
                       {!pres.is_active && <span className="badge-neutral badge">Hidden</span>}
                     </div>
-                    <p className="pres-meta">
-                      {pres.original_filename} &middot; {pres.slide_count} slides &middot; Uploaded {formatDate(pres.created_at)}
+                    <p className="pres-meta" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      {pres.source_url ? (
+                        <Globe size={13} style={{ flexShrink: 0, color: "#06b6d4" }} />
+                      ) : (
+                        <FileType size={13} style={{ flexShrink: 0, color: "#6366f1" }} />
+                      )}
+                      {pres.source_url || pres.original_filename} &middot; {pres.slide_count} {pres.source_url ? "pages" : "slides"} &middot; {formatDate(pres.created_at)}
                     </p>
                     {pres.error_message && (
                       <p style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8, fontSize: 13, color: "var(--c-error)" }}>

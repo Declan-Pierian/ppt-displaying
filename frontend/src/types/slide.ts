@@ -242,6 +242,7 @@ export interface PresentationAdminMeta extends PresentationMeta {
   status: string;
   is_active: boolean;
   error_message: string | null;
+  source_url: string | null;
   updated_at: string | null;
 }
 

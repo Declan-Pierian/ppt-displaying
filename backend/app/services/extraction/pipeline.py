@@ -44,7 +44,7 @@ def extract_presentation(pptx_path: str, presentation_id: int, media_dir: str) -
 
         for z_order, shape in enumerate(slide.shapes):
             try:
-                shape_data = extract_shape(shape, media_dir, z_order, presentation_id)
+                shape_data = extract_shape(shape, media_dir, z_order, presentation_id, slide_index)
                 if shape_data:
                     slide_data["shapes"].append(shape_data)
             except Exception as e:
@@ -174,7 +174,7 @@ def _has_table(shape) -> bool:
     return False
 
 
-def extract_shape(shape, media_dir: str, z_order: int, presentation_id: int) -> dict | None:
+def extract_shape(shape, media_dir: str, z_order: int, presentation_id: int, slide_index: int = 0) -> dict | None:
     """Dispatch shape extraction based on shape type."""
     base = _make_base(shape, z_order)
 
@@ -185,12 +185,12 @@ def extract_shape(shape, media_dir: str, z_order: int, presentation_id: int) -> 
 
     # --- GROUP ---
     if shape_type == MSO_SHAPE_TYPE.GROUP:
-        return extract_group_shape(shape, base, media_dir, presentation_id, extract_shape)
+        return extract_group_shape(shape, base, media_dir, presentation_id, extract_shape, slide_index)
 
     # --- PICTURE ---
     if shape_type == MSO_SHAPE_TYPE.PICTURE or (shape_type is None and _has_image(shape)):
         try:
-            return extract_image_shape(shape, base, media_dir, presentation_id)
+            return extract_image_shape(shape, base, media_dir, presentation_id, slide_index)
         except Exception as e:
             logger.warning(f"Image extraction failed: {e}")
 
@@ -210,11 +210,11 @@ def extract_shape(shape, media_dir: str, z_order: int, presentation_id: int) -> 
 
     # --- MEDIA ---
     if shape_type == MSO_SHAPE_TYPE.MEDIA:
-        return _extract_media_shape(shape, base, media_dir, presentation_id)
+        return _extract_media_shape(shape, base, media_dir, presentation_id, slide_index)
 
     # --- PLACEHOLDER ---
     if shape_type == MSO_SHAPE_TYPE.PLACEHOLDER:
-        return _extract_placeholder_content(shape, base, media_dir, presentation_id)
+        return _extract_placeholder_content(shape, base, media_dir, presentation_id, slide_index)
 
     # --- AUTO_SHAPE ---
     if shape_type == MSO_SHAPE_TYPE.AUTO_SHAPE:
@@ -232,7 +232,7 @@ def extract_shape(shape, media_dir: str, z_order: int, presentation_id: int) -> 
     if shape_type == MSO_SHAPE_TYPE.EMBEDDED_OLE_OBJECT:
         if _has_image(shape):
             try:
-                return extract_image_shape(shape, base, media_dir, presentation_id)
+                return extract_image_shape(shape, base, media_dir, presentation_id, slide_index)
             except Exception:
                 pass
         if hasattr(shape, 'has_text_frame') and shape.has_text_frame and shape.text_frame.text.strip():
@@ -242,7 +242,7 @@ def extract_shape(shape, media_dir: str, z_order: int, presentation_id: int) -> 
     # --- SMART FALLBACK ---
     if _has_image(shape):
         try:
-            return extract_image_shape(shape, base, media_dir, presentation_id)
+            return extract_image_shape(shape, base, media_dir, presentation_id, slide_index)
         except Exception:
             pass
 
@@ -269,11 +269,11 @@ def extract_shape(shape, media_dir: str, z_order: int, presentation_id: int) -> 
     return None
 
 
-def _extract_placeholder_content(shape, base: dict, media_dir: str, presentation_id: int) -> dict | None:
+def _extract_placeholder_content(shape, base: dict, media_dir: str, presentation_id: int, slide_index: int = 0) -> dict | None:
     """Smart extraction for placeholder shapes."""
     if _has_image(shape):
         try:
-            return extract_image_shape(shape, base, media_dir, presentation_id)
+            return extract_image_shape(shape, base, media_dir, presentation_id, slide_index)
         except Exception:
             pass
 
@@ -341,7 +341,7 @@ def _extract_shape_hyperlink(shape) -> str | None:
     return None
 
 
-def _extract_media_shape(shape, base: dict, media_dir: str, presentation_id: int) -> dict:
+def _extract_media_shape(shape, base: dict, media_dir: str, presentation_id: int, slide_index: int = 0) -> dict:
     """Extract a media (video/audio) shape."""
     import os
 
@@ -357,7 +357,7 @@ def _extract_media_shape(shape, base: dict, media_dir: str, presentation_id: int
                     if rel and hasattr(rel, 'target_part'):
                         blob = rel.target_part.blob
                         ext = os.path.splitext(rel.target_ref)[1] if hasattr(rel, 'target_ref') else '.mp4'
-                        filename = f"media_{shape.shape_id}{ext}"
+                        filename = f"media_s{slide_index}_{shape.shape_id}{ext}"
                         filepath = os.path.join(media_dir, filename)
                         with open(filepath, "wb") as f:
                             f.write(blob)

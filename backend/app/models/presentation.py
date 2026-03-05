@@ -18,6 +18,7 @@ class Presentation(Base):
     slide_height_emu = Column(BigInteger, nullable=False, default=6858000)
     status = Column(String(20), nullable=False, default="processing")
     error_message = Column(Text, nullable=True)
+    source_url = Column(String(2048), nullable=True)  # NULL for PPTX uploads, set for URL-based
     is_active = Column(Boolean, nullable=False, default=True)
     uploaded_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, server_default=func.now())

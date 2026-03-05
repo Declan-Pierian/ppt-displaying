@@ -1,7 +1,7 @@
 """Extract grouped shapes recursively."""
 
 
-def extract_group_shape(shape, base: dict, media_dir: str, presentation_id: int, extract_shape_fn) -> dict:
+def extract_group_shape(shape, base: dict, media_dir: str, presentation_id: int, extract_shape_fn, slide_index: int = 0) -> dict:
     """Extract a group shape by recursively extracting its child shapes.
 
     Args:
@@ -10,6 +10,7 @@ def extract_group_shape(shape, base: dict, media_dir: str, presentation_id: int,
         media_dir: Directory to save extracted media
         presentation_id: ID of the presentation
         extract_shape_fn: Reference to the main extract_shape function for recursion
+        slide_index: Index of the current slide (for unique image filenames)
     """
     child_shapes = []
     parent_z = base.get("z_order", 0)
@@ -17,7 +18,7 @@ def extract_group_shape(shape, base: dict, media_dir: str, presentation_id: int,
     try:
         for z_idx, child_shape in enumerate(shape.shapes):
             child_data = extract_shape_fn(
-                child_shape, media_dir, parent_z * 1000 + z_idx, presentation_id
+                child_shape, media_dir, parent_z * 1000 + z_idx, presentation_id, slide_index
             )
             if child_data:
                 child_shapes.append(child_data)

@@ -19,14 +19,15 @@ CONTENT_TYPE_MAP = {
 }
 
 
-def extract_image_shape(shape, base: dict, media_dir: str, presentation_id: int) -> dict:
+def extract_image_shape(shape, base: dict, media_dir: str, presentation_id: int, slide_index: int = 0) -> dict:
     """Extract an image shape, saving the image file to media_dir."""
     try:
         image = shape.image
         content_type = image.content_type
         ext = CONTENT_TYPE_MAP.get(content_type, ".png")
 
-        filename = f"image_{shape.shape_id}{ext}"
+        # Include slide index in filename to prevent collisions across slides
+        filename = f"image_s{slide_index}_{shape.shape_id}{ext}"
         filepath = os.path.join(media_dir, filename)
 
         with open(filepath, "wb") as f:
@@ -37,7 +38,7 @@ def extract_image_shape(shape, base: dict, media_dir: str, presentation_id: int)
             try:
                 from PIL import Image
                 img = Image.open(filepath)
-                png_filename = f"image_{shape.shape_id}.png"
+                png_filename = f"image_s{slide_index}_{shape.shape_id}.png"
                 png_path = os.path.join(media_dir, png_filename)
                 img.save(png_path, "PNG")
                 filename = png_filename

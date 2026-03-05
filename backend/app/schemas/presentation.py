@@ -13,6 +13,7 @@ class PresentationResponse(BaseModel):
     status: str
     is_active: bool
     error_message: str | None = None
+    source_url: str | None = None
     created_at: datetime
     updated_at: datetime | None = None
 
@@ -26,6 +27,7 @@ class PresentationPublicResponse(BaseModel):
     slide_count: int
     slide_width_emu: int
     slide_height_emu: int
+    source_url: str | None = None
     created_at: datetime
 
     class Config:
@@ -34,6 +36,11 @@ class PresentationPublicResponse(BaseModel):
 
 class PresentationToggleRequest(BaseModel):
     is_active: bool
+
+
+class WebsiteSubmitRequest(BaseModel):
+    url: str
+    max_pages: int = 0  # 0 = crawl all discovered pages (up to safety cap)
 
 
 class UploadLogResponse(BaseModel):

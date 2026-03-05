@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     CLAUDE_API_KEY: str = ""
     CLAUDE_MODEL: str = "claude-haiku-4-5-20251001"
 
+    # Website crawling
+    MAX_CRAWL_PAGES: int = 15
+
     # CORS
     CORS_ORIGINS: list[str] = ["http://localhost:5173", "http://localhost:3000"]
 
