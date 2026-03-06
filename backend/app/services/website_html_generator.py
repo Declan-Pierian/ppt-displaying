@@ -200,14 +200,22 @@ Use these EXACT URLs for page screenshots in <img> tags:
 - Screenshots should be the visual centerpiece alongside the text, NOT tiny thumbnails
 
 ## Navigation & Controls
-- Full-height side zones (80px wide) for prev/next with gradient + arrow on hover
+- Full-height side zones (80px wide, class="nav-zone") for prev/next with gradient + arrow on hover
 - Keyboard: arrows, space, Home, End
 - Touch swipe support
 - Progress bar at top
 - Slide counter at bottom-right
 - Back button top-left linking to "/"
-- TOOLBAR (bottom-left, fixed): magnifying glass zoom, +/- zoom, zoom %, reset, separator, pen (red 3px), highlighter (yellow 20px semi-transparent), clear drawings. Canvas overlay for drawing. Disable keyboard nav when drawing.
+- TOOLBAR (bottom-left, fixed, class="toolbar"): magnifying glass zoom, +/- zoom, zoom %, reset, separator, pen (red 3px), highlighter (yellow 20px semi-transparent), clear drawings, separator, EYE ICON toggle (toggles nav arrow zones visible/hidden). Canvas overlay for drawing. Disable keyboard nav when drawing.
 - Wrap each slide content in <div class="zoom-wrapper">
+
+## CRITICAL LAYOUT RULES — Content Must Fit Screen
+- EVERY slide MUST fit within 100vw x 100vh. NO scrolling, NO overflow.
+- Keep content concise: max 4-5 bullet points per slide, short sentences
+- Use font-size clamp: h1 clamp(1.5rem,4vw,3rem), h2 clamp(1.2rem,3vw,2.2rem), p clamp(0.8rem,1.5vw,1.1rem)
+- .zoom-wrapper padding: 50px 90px (leaves room for nav zones + logo)
+- If a slide has both text and a screenshot, use a flex row layout and constrain the image to max 45% width
+- NEVER let content exceed the viewport — it's better to have less text than to overflow
 
 ## Company Logo
 <img src="/api/v1/pierian-logo" alt="Pierian" class="company-logo" style="position:fixed;top:16px;right:20px;z-index:95;height:52px;width:auto;object-fit:contain;pointer-events:none;border-radius:6px;" />
@@ -411,43 +419,167 @@ to create a comprehensive presentation. Break each page into multiple slides.
             '{color:#f1f5f9 !important;}\n'
         )
 
+    # Build background image CSS rule if template selected
+    bg_image_css = ""
+    if background_template_path and os.path.exists(background_template_path):
+        bg_name_css = os.path.basename(background_template_path)
+        if template_brightness == "light":
+            overlay = "linear-gradient(rgba(255,255,255,0.15),rgba(255,255,255,0.15))"
+        else:
+            overlay = "linear-gradient(rgba(15,23,42,0.35),rgba(15,23,42,0.45))"
+        bg_image_css = (
+            f'/* Force background template image on every slide */\n'
+            f'.slide{{\n'
+            f'  background:{overlay},'
+            f"url('/api/v1/admin/background-templates/{bg_name_css}') center center/cover no-repeat !important;\n"
+            f'}}\n'
+        )
+
     safety_css = (
-        '\n<style>\n'
-        + text_color_rule +
+        '\n<style id="safety-overrides">\n'
+        + text_color_rule
+        + bg_image_css +
         '.tag,.pill,.badge,.kpi-label,.metric-mini .label,.chart-bar span'
         '{color:inherit !important;}\n'
         '.gradient-text{-webkit-text-fill-color:transparent !important;'
         'background-clip:text !important;}\n'
-        '.slide,.slide-container,[class*="slide"]:not(.slide-counter)'
-        '{overflow:hidden !important;max-height:100vh !important;}\n'
+        '/* Strict slide containment — no overflow allowed */\n'
+        '.slide,.slide-container,[class*="slide"]:not(.slide-counter):not(.slide-nav){\n'
+        '  overflow:hidden !important;\n'
+        '  max-height:100vh !important;\n'
+        '  height:100vh !important;\n'
+        '  width:100vw !important;\n'
+        '  position:absolute !important;\n'
+        '  box-sizing:border-box !important;\n'
+        '}\n'
+        '.slide *{box-sizing:border-box !important;}\n'
+        '/* Zoom wrapper must stay within slide */\n'
+        '.zoom-wrapper{\n'
+        '  max-height:100vh !important;\n'
+        '  overflow:hidden !important;\n'
+        '  box-sizing:border-box !important;\n'
+        '  padding:50px 90px !important;\n'
+        '}\n'
+        '/* Headings: clamp sizes to prevent overflow */\n'
+        '.slide h1{font-size:clamp(1.5rem,4vw,3rem) !important;line-height:1.15 !important;}\n'
+        '.slide h2{font-size:clamp(1.2rem,3vw,2.2rem) !important;line-height:1.2 !important;}\n'
+        '.slide h3{font-size:clamp(1rem,2.5vw,1.6rem) !important;line-height:1.25 !important;}\n'
+        '.slide p,.slide li{font-size:clamp(0.8rem,1.5vw,1.1rem) !important;line-height:1.4 !important;}\n'
+        '/* Prevent any element from exceeding viewport */\n'
+        '.slide>*,.zoom-wrapper>*{max-width:100% !important;}\n'
+        '.slide img:not(.company-logo):not([class*="icon"]):not([class*="logo"]):not([width="1"]){\n'
+        '  max-width:50vw !important;\n'
+        '  max-height:55vh !important;\n'
+        '  width:auto !important;\n'
+        '  height:auto !important;\n'
+        '  object-fit:contain !important;\n'
+        '  border-radius:12px;\n'
+        '}\n'
         '.company-logo{height:52px !important;width:auto !important;'
         'position:fixed !important;}\n'
-        '/* Screenshot sizing safety */\n'
-        '.slide img:not(.company-logo):not([class*="icon"]):not([class*="logo"])'
-        '{min-width:200px;max-width:55%;max-height:65vh;'
-        'object-fit:contain;border-radius:12px;}\n'
+        '/* Two-column layouts: flex-wrap to prevent horizontal overflow */\n'
+        '.slide [style*="display:flex"],.slide [style*="display: flex"]{\n'
+        '  flex-wrap:wrap !important;\n'
+        '}\n'
+        '/* Nav arrow zones — togglable via eye icon */\n'
+        '.nav-zone{transition:opacity 0.3s ease !important;}\n'
+        '.nav-zones-hidden .nav-zone{opacity:0 !important;pointer-events:none !important;}\n'
         '</style>\n'
     )
 
-    autofit_js = (
-        '\n<script>\n'
-        'function autoFitSlides(){\n'
-        '  document.querySelectorAll(".zoom-wrapper").forEach(function(w){\n'
-        '    var slide=w.closest(".slide");\n'
-        '    if(!slide)return;\n'
-        '    w.style.transform="";\n'
-        '    w.style.transformOrigin="center top";\n'
-        '    var sh=slide.clientHeight;\n'
-        '    var wh=w.scrollHeight;\n'
-        '    if(wh>sh*0.9){\n'
-        '      var scale=Math.max(0.5,(sh*0.85)/wh);\n'
-        '      w.style.transform="scale("+scale+")";\n'
-        '    }\n'
-        '  });\n'
-        '}\n'
-        'window.addEventListener("load",function(){setTimeout(autoFitSlides,200);});\n'
-        '</script>\n'
-    )
+    autofit_js = r"""
+<script>
+/* ── Auto-fit: scale down slide content if it overflows ── */
+function autoFitSlides(){
+  document.querySelectorAll(".zoom-wrapper").forEach(function(w){
+    var slide=w.closest(".slide");
+    if(!slide)return;
+    w.style.transform="";
+    w.style.transformOrigin="top center";
+    // Reset any previous inline max-height
+    w.style.maxHeight="";
+    var sh=slide.clientHeight;
+    var wh=w.scrollHeight;
+    if(wh>sh*0.95){
+      var scale=Math.max(0.4,(sh*0.92)/wh);
+      w.style.transform="scale("+scale+")";
+      // After scaling, ensure the wrapper doesn't push layout
+      w.style.maxHeight=sh+"px";
+    }
+  });
+}
+window.addEventListener("load",function(){
+  setTimeout(autoFitSlides,300);
+  setTimeout(autoFitSlides,1000); // second pass after images load
+});
+window.addEventListener("resize",function(){setTimeout(autoFitSlides,150);});
+
+/* ── Eye icon: toggle nav arrow visibility ── */
+(function(){
+  var navVisible=true;
+  function initEyeToggle(){
+    // Find the toolbar
+    var toolbar=document.querySelector('.toolbar,[class*="toolbar"],[id*="toolbar"]');
+    if(!toolbar){
+      // Try to find a fixed/absolute positioned bar at the bottom
+      var allFixed=document.querySelectorAll('[style*="position:fixed"],[style*="position: fixed"]');
+      allFixed.forEach(function(el){
+        if(el.offsetTop>window.innerHeight*0.7 && el.querySelectorAll('button').length>=2){
+          toolbar=el;
+        }
+      });
+    }
+    if(!toolbar)return;
+
+    // Create eye toggle button
+    var sep=document.createElement('span');
+    sep.style.cssText='width:1px;height:20px;background:rgba(255,255,255,0.2);margin:0 4px;display:inline-block;vertical-align:middle;';
+
+    var btn=document.createElement('button');
+    btn.title='Toggle navigation arrows';
+    btn.innerHTML='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>';
+    btn.style.cssText='background:rgba(255,255,255,0.1);border:none;color:#e2e8f0;cursor:pointer;padding:6px 8px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;transition:all 0.2s;vertical-align:middle;';
+    btn.addEventListener('mouseenter',function(){btn.style.background='rgba(255,255,255,0.2)';});
+    btn.addEventListener('mouseleave',function(){
+      btn.style.background=navVisible?'rgba(255,255,255,0.1)':'rgba(239,68,68,0.2)';
+    });
+    btn.addEventListener('click',function(){
+      navVisible=!navVisible;
+      // Toggle class on body for CSS-based hiding
+      document.body.classList.toggle('nav-zones-hidden',!navVisible);
+      // Also toggle all nav zones directly
+      document.querySelectorAll('.nav-zone,.nav-prev,.nav-next,[class*="nav-prev"],[class*="nav-next"]').forEach(function(el){
+        el.style.opacity=navVisible?'':'0';
+        el.style.pointerEvents=navVisible?'':'none';
+      });
+      // Also target left/right fixed zones
+      document.querySelectorAll('[style*="left:0"][style*="height:100"],' +
+        '[style*="right:0"][style*="height:100"],' +
+        '[style*="left: 0"][style*="height: 100"],' +
+        '[style*="right: 0"][style*="height: 100"]').forEach(function(el){
+        if(el.querySelector('svg')||el.textContent.trim().match(/^[<>←→‹›❮❯]$/)){
+          el.style.opacity=navVisible?'':'0';
+          el.style.pointerEvents=navVisible?'':'none';
+        }
+      });
+      // Update button style
+      btn.style.background=navVisible?'rgba(255,255,255,0.1)':'rgba(239,68,68,0.2)';
+      btn.innerHTML=navVisible
+        ?'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>'
+        :'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>';
+    });
+
+    toolbar.appendChild(sep);
+    toolbar.appendChild(btn);
+  }
+  if(document.readyState==='loading'){
+    document.addEventListener('DOMContentLoaded',function(){setTimeout(initEyeToggle,500);});
+  }else{
+    setTimeout(initEyeToggle,500);
+  }
+})();
+</script>
+"""
 
     if not has_logo and "<body" in html_content.lower():
         html_content = re.sub(
