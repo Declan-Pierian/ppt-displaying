@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
-import { Eye, EyeOff, Trash2, ExternalLink, Loader2, RefreshCw, FileSliders, Layers, CheckCircle, Clock, AlertCircle, Globe, FileType } from "lucide-react";
+import { Link } from "react-router-dom";
+import { Eye, EyeOff, Trash2, ExternalLink, Loader2, RefreshCw, FileSliders, Layers, CheckCircle, Clock, AlertCircle, Globe, FileType, PenLine } from "lucide-react";
 import api from "../../lib/api";
 import { formatDate } from "../../lib/slideUtils";
 import type { PresentationAdminMeta } from "../../types/slide";
@@ -114,7 +115,10 @@ export default function PresentationsPage() {
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
                     {pres.status === "ready" && (
-                      <a href={`/api/v1/presentations/${pres.id}/webpage`} target="_blank" rel="noopener noreferrer" className="btn-icon" title="View"><ExternalLink size={18} /></a>
+                      <>
+                        <Link to={`/admin/presentations/${pres.id}/view`} className="btn-icon" title="View & Edit" style={{ color: "var(--c-primary)" }}><PenLine size={18} /></Link>
+                        <a href={`/api/v1/presentations/${pres.id}/webpage`} target="_blank" rel="noopener noreferrer" className="btn-icon" title="View Full Screen"><ExternalLink size={18} /></a>
+                      </>
                     )}
                     <button onClick={() => toggleActive(pres.id, pres.is_active)} className={`btn-icon`} title={pres.is_active ? "Hide" : "Show"}>
                       {pres.is_active ? <EyeOff size={18} /> : <Eye size={18} />}

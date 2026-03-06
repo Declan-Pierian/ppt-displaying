@@ -5,12 +5,16 @@ import AdminLayout from "./pages/admin/AdminLayout";
 import UploadPage from "./pages/admin/UploadPage";
 import PresentationsPage from "./pages/admin/PresentationsPage";
 import LogsPage from "./pages/admin/LogsPage";
+import PresentationViewerPage from "./pages/admin/PresentationViewerPage";
 export default function App() {
   return (
     <BrowserRouter>
       <Routes>
         {/* Public viewer routes */}
         <Route path="/" element={<HomePage />} />
+
+        {/* Admin: standalone viewer page (full-screen, NOT inside AdminLayout) */}
+        <Route path="/admin/presentations/:id/view" element={<PresentationViewerPage />} />
 
         {/* Admin routes */}
         <Route path="/admin/login" element={<LoginPage />} />

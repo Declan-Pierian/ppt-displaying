@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import auth, upload, presentations, logs, progress, website
+from app.api.v1.endpoints import auth, upload, presentations, logs, progress, website, admin_viewer
 
 api_router = APIRouter(prefix="/api/v1")
 api_router.include_router(auth.router)
@@ -9,3 +9,4 @@ api_router.include_router(presentations.router)
 api_router.include_router(logs.router)
 api_router.include_router(progress.router)
 api_router.include_router(website.router)
+api_router.include_router(admin_viewer.router)

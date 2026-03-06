@@ -731,8 +731,47 @@ window.addEventListener("resize",function(){setTimeout(autoFitSlides,150);});
     if "</head>" in html_content.lower():
         html_content = html_content.replace("</head>", safety_css + "</head>", 1)
 
+    # PostMessage JS: notify parent window of slide changes (for admin viewer sync)
+    postmessage_js = r"""
+<script>
+/* ── Notify parent window of slide changes (admin viewer iframe sync) ── */
+(function(){
+  var lastSlide=-1;
+  function notifyParent(){
+    var idx=-1;
+    // Strategy 1: global variables Claude commonly uses
+    if(typeof currentSlide!=='undefined') idx=currentSlide;
+    else if(typeof currentIndex!=='undefined') idx=currentIndex;
+    // Strategy 2: find visible/active slide by class or computed style
+    else {
+      var slides=document.querySelectorAll('.slide');
+      slides.forEach(function(s,i){
+        if(s.classList.contains('active')){idx=i;}
+      });
+      // Fallback: check opacity
+      if(idx<0){
+        slides.forEach(function(s,i){
+          var st=window.getComputedStyle(s);
+          if(st.opacity==='1'&&st.display!=='none'&&st.visibility!=='hidden'){idx=i;}
+        });
+      }
+    }
+    if(idx!==lastSlide&&idx>=0){
+      lastSlide=idx;
+      var total=document.querySelectorAll('.slide').length;
+      try{window.parent.postMessage({type:'slideChange',slideIndex:idx,totalSlides:total},'*');}catch(e){}
+    }
+  }
+  setInterval(notifyParent,300);
+  document.addEventListener('keydown',function(){setTimeout(notifyParent,100);});
+  document.addEventListener('click',function(){setTimeout(notifyParent,200);});
+  document.addEventListener('touchend',function(){setTimeout(notifyParent,200);});
+})();
+</script>
+"""
+
     if "</body>" in html_content.lower():
-        html_content = html_content.replace("</body>", autofit_js + "</body>", 1)
+        html_content = html_content.replace("</body>", autofit_js + postmessage_js + "</body>", 1)
 
     webpage_path = os.path.join(pres_dir, "webpage.html")
     with open(webpage_path, "w", encoding="utf-8") as f:

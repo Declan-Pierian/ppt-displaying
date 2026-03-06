@@ -246,6 +246,55 @@ export interface PresentationAdminMeta extends PresentationMeta {
   updated_at: string | null;
 }
 
+// ── References & Chat Editing types ──
+
+export interface SlideReference {
+  slide_number: number;
+  page_url: string | null;
+  page_title: string | null;
+  content: {
+    title?: string;
+    meta_description?: string;
+    sections?: Array<{ heading: string; level: string; content: string[] }>;
+    key_paragraphs?: string[];
+    cards?: string[];
+    list_items?: string[];
+    hero_text?: string[];
+    nav_items?: string[];
+  };
+}
+
+export interface ReferencesData {
+  presentation_id: number;
+  title: string;
+  source_url: string | null;
+  source_type: string;
+  slides: SlideReference[];
+}
+
+export interface ChatMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  timestamp: string;
+  slideNumbers?: number[];
+  version?: number;
+  success?: boolean;
+  tokenUsage?: { input_tokens: number; output_tokens: number } | null;
+}
+
+export interface EditHistoryEntry {
+  version: number;
+  timestamp: string;
+  prompt: string | null;
+  slides_affected: number[];
+}
+
+export interface EditHistoryData {
+  versions: EditHistoryEntry[];
+  current_version: number;
+}
+
 export interface UploadLog {
   id: number;
   presentation_id: number | null;

@@ -64,6 +64,54 @@ class BackgroundTemplateResponse(BaseModel):
     url: str
 
 
+# ── References & Chat Editing schemas ──
+
+class SlideReferenceData(BaseModel):
+    slide_number: int
+    page_url: str | None = None
+    page_title: str | None = None
+    content: dict = {}
+
+
+class ReferencesResponse(BaseModel):
+    presentation_id: int
+    title: str
+    source_url: str | None = None
+    source_type: str  # "website" or "pptx"
+    slides: list[SlideReferenceData]
+
+
+class ChatEditRequest(BaseModel):
+    prompt: str
+    slide_numbers: list[int] | None = None  # None = AI decides
+
+
+class ChatEditResponse(BaseModel):
+    success: bool
+    message: str
+    version: int
+    modified_slides: list[int]
+    token_usage: dict | None = None
+
+
+class UndoResponse(BaseModel):
+    success: bool
+    version: int
+    message: str
+
+
+class EditHistoryEntry(BaseModel):
+    version: int
+    timestamp: str
+    prompt: str | None = None
+    slides_affected: list[int] = []
+
+
+class EditHistoryResponse(BaseModel):
+    versions: list[EditHistoryEntry]
+    current_version: int
+
+
 class UploadLogResponse(BaseModel):
     id: int
     presentation_id: int | None = None

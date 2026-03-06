@@ -439,10 +439,46 @@ Below I will show you each slide as a rendered image (so you can see the exact v
             "</head>", safety_css + "</head>", 1
         )
 
-    # Inject auto-fit JS before </body>
+    # PostMessage JS: notify parent window of slide changes (for admin viewer sync)
+    postmessage_js = r"""
+<script>
+/* ── Notify parent window of slide changes (admin viewer iframe sync) ── */
+(function(){
+  var lastSlide=-1;
+  function notifyParent(){
+    var idx=-1;
+    if(typeof currentSlide!=='undefined') idx=currentSlide;
+    else if(typeof currentIndex!=='undefined') idx=currentIndex;
+    else {
+      var slides=document.querySelectorAll('.slide');
+      slides.forEach(function(s,i){
+        if(s.classList.contains('active')){idx=i;}
+      });
+      if(idx<0){
+        slides.forEach(function(s,i){
+          var st=window.getComputedStyle(s);
+          if(st.opacity==='1'&&st.display!=='none'&&st.visibility!=='hidden'){idx=i;}
+        });
+      }
+    }
+    if(idx!==lastSlide&&idx>=0){
+      lastSlide=idx;
+      var total=document.querySelectorAll('.slide').length;
+      try{window.parent.postMessage({type:'slideChange',slideIndex:idx,totalSlides:total},'*');}catch(e){}
+    }
+  }
+  setInterval(notifyParent,300);
+  document.addEventListener('keydown',function(){setTimeout(notifyParent,100);});
+  document.addEventListener('click',function(){setTimeout(notifyParent,200);});
+  document.addEventListener('touchend',function(){setTimeout(notifyParent,200);});
+})();
+</script>
+"""
+
+    # Inject auto-fit JS + postMessage JS before </body>
     if "</body>" in html_content.lower():
         html_content = html_content.replace(
-            "</body>", autofit_js + "</body>", 1
+            "</body>", autofit_js + postmessage_js + "</body>", 1
         )
 
     # Save the webpage
