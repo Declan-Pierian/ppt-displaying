@@ -236,8 +236,7 @@ Use these exact URLs for any images you include in the HTML:
 13. Wrap each slide's content inside a <div class="zoom-wrapper"> so zoom scales the content. The zoom-wrapper should have transform-origin: center center and transition on transform.
 14. Include a progress bar at top and slide counter at bottom-right.
 15. HYPERLINKS: Text marked with [LINK: url] must be rendered as clickable <a> tags with href set to the URL, target="_blank", and styled with underline + accent color. Images marked with (wrap in <a href="...">) must be wrapped in anchor tags linking to that URL.
-16. COMPANY LOGO: Include the Pierian company logo in the top-right corner of the page (fixed position, visible on all slides). Use this exact HTML: <img src="/api/v1/pierian-logo" alt="Pierian" class="company-logo" />. Style it with: position fixed, top 16px, right 20px, z-index 95, height 52px, border-radius 6px, pointer-events none.
-17. VIEWPORT SAFETY: Each slide MUST fit within 100vw x 100vh with NO scrolling within a single slide. Add overflow:hidden on each slide container. All content (text + images) must fit within the visible area with proper padding (at least 60px top/bottom, 100px left/right for navigation zones). If content is too much, reduce font sizes or image sizes — NEVER allow overflow.
+16. VIEWPORT SAFETY: Each slide MUST fit within 100vw x 100vh with NO scrolling within a single slide. Add overflow:hidden on each slide container. All content (text + images) must fit within the visible area with proper padding (at least 60px top/bottom, 100px left/right for navigation zones). If content is too much, reduce font sizes or image sizes — NEVER allow overflow.
 18. VISUAL FIDELITY: You are provided both a screenshot of each slide AND the extracted text/images. Use the SCREENSHOT as your primary reference for layout decisions — replicate the visual arrangement (where text sits relative to images, content grouping, etc.). The extracted text ensures accuracy of the words; the screenshot shows the layout.
 
 ## Slides
@@ -369,19 +368,8 @@ Below I will show you each slide as a rendered image (so you can see the exact v
             len(html_content),
         )
 
-    # ── Post-processing: inject Pierian logo + safety CSS + auto-fit JS ──
+    # ── Post-processing: inject safety CSS + auto-fit JS ──
     import re
-
-    # 1. Only inject logo if Claude didn't already include one
-    has_logo = "pierian-logo" in html_content
-    logo_snippet = (
-        '\n<!-- Pierian company logo -->\n'
-        '<img src="/api/v1/pierian-logo" alt="Pierian" '
-        'class="company-logo" '
-        'style="position:fixed;top:16px;right:20px;z-index:95;'
-        'height:52px;width:auto;object-fit:contain;pointer-events:none;'
-        'border-radius:6px;" />\n'
-    )
 
     safety_css = (
         '\n<style>\n'
@@ -395,9 +383,6 @@ Below I will show you each slide as a rendered image (so you can see the exact v
         '/* Safety: constrain slide content within viewport */\n'
         '.slide,.slide-container,[class*="slide"]:not(.slide-counter)'
         '{overflow:hidden !important;max-height:100vh !important;}\n'
-        '/* Constrain content images — NOT the fixed company logo */\n'
-        '.company-logo{height:52px !important;width:auto !important;'
-        'position:fixed !important;}\n'
         '</style>\n'
     )
 
@@ -422,16 +407,6 @@ Below I will show you each slide as a rendered image (so you can see the exact v
         'window.addEventListener("load",function(){setTimeout(autoFitSlides,200);});\n'
         '</script>\n'
     )
-
-    # Inject logo right after <body...> (only if Claude didn't include one)
-    if not has_logo and "<body" in html_content.lower():
-        html_content = re.sub(
-            r'(<body[^>]*>)',
-            r'\1' + logo_snippet,
-            html_content,
-            count=1,
-            flags=re.IGNORECASE,
-        )
 
     # Inject safety CSS before </head>
     if "</head>" in html_content.lower():

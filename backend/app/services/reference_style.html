@@ -359,19 +359,6 @@
   }
   .back-btn:hover { background: rgba(255,255,255,0.12); color: #fff; }
 
-  /* Company logo (top-right of every slide) */
-  .company-logo {
-    position: fixed;
-    top: 16px;
-    right: 20px;
-    z-index: 95;
-    height: 52px;
-    width: auto;
-    object-fit: contain;
-    pointer-events: none;
-    border-radius: 6px;
-  }
-
   /* Zoom wrapper */
   .zoom-wrapper {
     transform-origin: center center;
@@ -400,7 +387,6 @@
 <div class="progress-bar" id="progressBar"></div>
 <div class="slide-counter" id="slideCounter"></div>
 <a href="/" class="back-btn" title="Back to presentations">&larr;</a>
-<img src="/api/v1/pierian-logo" alt="Pierian" class="company-logo" />
 
 <!-- Full-side navigation zones -->
 <div class="nav-zone nav-zone-prev" onclick="prevSlide()"><div class="nav-zone-icon">&#8592;</div></div>

@@ -132,13 +132,14 @@ This is NOT optional. Do NOT recreate it with gradients. Do NOT use a solid colo
 **REQUIRED CSS for EVERY .slide:**
 ```css
 .slide {{
-  background: {overlay_css}, url('/api/v1/admin/background-templates/{bg_name}') center/cover no-repeat !important;
-  background-size: cover !important;
+  background: {overlay_css}, url('/api/v1/admin/background-templates/{bg_name}') center center / 100% 100% no-repeat !important;
+  background-size: 100% 100% !important;
 }}
 ```
 
 - The image URL is: /api/v1/admin/background-templates/{bg_name}
 - Apply this to every single .slide element — no exceptions
+- CRITICAL: Use `background-size: 100% 100%` (NOT `cover`) — the template must display in FULL without any cropping, including logos in corners
 - Add a subtle semi-transparent overlay on top for text readability
 - The overlay should be thin enough that the background image is clearly visible through it
 - Do NOT use solid color backgrounds — the actual template image must be visible on every slide
@@ -184,6 +185,34 @@ Use this exact design language:
 - Padding: 60px top/bottom, 100px left/right (for nav zones)
 {bg_template_instruction}
 
+## Website Images — EVERY image MUST appear with its NAME displayed!
+Each page may have extracted images with their associated text (person name + role, product name, etc.).
+The images are ALREADY MAPPED to the correct person/item — **you MUST use each image with its matching name/role.**
+
+**CRITICAL IMAGE RULES — STRICT COMPLIANCE REQUIRED:**
+1. **EVERY provided image MUST appear in the presentation** — do NOT skip any images
+2. Each image entry includes: URL, NAME, ROLE/TITLE — you MUST display ALL THREE
+3. **NAME must be visible below every image** — this is MANDATORY, not optional
+4. For people/team photos, use this EXACT HTML structure for each person:
+```html
+<div class="person-card">
+  <img class="team-photo" src="IMAGE_URL" alt="NAME" style="width:120px;height:120px;border-radius:50%;object-fit:cover;">
+  <div class="person-name">PERSON NAME</div>
+  <div class="person-role">ROLE/TITLE</div>
+</div>
+```
+5. Wrap all person cards in a grid container:
+```html
+<div class="team-grid">
+  <!-- person-card elements here -->
+</div>
+```
+6. **MAX 6-8 people per slide** — if there are more, create MULTIPLE team slides (e.g., "Our Team (1/3)", "Our Team (2/3)", etc.)
+7. **ALL images must be included** — split across as many slides as needed
+8. For product/feature images: use rectangular with rounded corners (border-radius: 12px; object-fit: cover;)
+9. Use the EXACT image URLs provided — they are absolute URLs from the original website
+10. For two-column layouts with screenshots, add class="two-col" to the flex container
+
 ## Screenshots — STRICT SIZING (images must NEVER exceed boundaries)
 Use these EXACT URLs for page screenshots in <img> tags:
 {json.dumps(screenshot_url_map, indent=2)}
@@ -213,23 +242,21 @@ Use these EXACT URLs for page screenshots in <img> tags:
 
 ## CRITICAL LAYOUT RULES — Content MUST Fit Screen (NO EXCEPTIONS)
 - EVERY slide MUST fit within 100vw x 100vh. NO scrolling, NO overflow. ZERO tolerance.
-- **MAX 3 CARDS/ITEMS per slide in any grid or flex layout.** If you have 4+ items, SPLIT them across 2+ slides.
+- **MAX 3 CONTENT CARDS per slide for features/services.** If you have 4+ feature items, SPLIT across 2+ slides. EXCEPTION: team/people grids using class="team-grid" can have 6-8 person-cards per slide.
 - Keep content concise: max 3 bullet points per slide, short sentences (max 12 words each)
 - Use font-size clamp: h1 clamp(1.3rem,3.2vw,2.5rem), h2 clamp(1rem,2.5vw,1.8rem), p clamp(0.7rem,1.2vw,0.95rem)
-- .zoom-wrapper padding: 50px 90px (leaves room for nav zones + logo)
-- **TWO-COLUMN SLIDES (text + screenshot):** use display:flex; align-items:center; gap:40px; max-height:65vh; overflow:hidden;
+- .zoom-wrapper padding: 50px 90px (leaves room for nav zones)
+- **TWO-COLUMN SLIDES (text + screenshot):** use class="two-col" on the container: display:flex; align-items:center; gap:40px; max-height:65vh; overflow:hidden;
   - Text column: flex:1 1 55%; max-width:55%; max 3-4 short bullet points
   - Image column: flex:0 0 38%; max-width:38%; text-align:center; display:flex; align-items:center; justify-content:center;
   - Image inside column: max-width:90%; max-height:36vh; object-fit:contain; display:block; margin:0 auto;
   - The image must be CENTERED in its column with visible padding on all sides — it must NEVER touch the right edge of the slide
+- **TEAM/PEOPLE SLIDES:** use class="team-grid" wrapper with class="person-card" for each person. Max 6-8 people per slide, split into multiple slides if needed.
 - Card heights: max-height 25vh per card. Grid gaps: 16px max. overflow:hidden on every card.
 - **EVERY card/box MUST have overflow:hidden** in its inline style
 - CTA/final slides: keep it to heading + 2-3 short lines + 1 button. Do NOT put long URLs in visible text.
 - NEVER let content exceed the viewport — MORE slides with LESS content is always better than overflowing
 - Test mentally: if total content height exceeds ~75vh (leaving 25vh for padding/heading), SPLIT into 2 slides.
-
-## Company Logo
-<img src="/api/v1/pierian-logo" alt="Pierian" class="company-logo" style="position:fixed;top:16px;right:20px;z-index:95;height:52px;width:auto;object-fit:contain;pointer-events:none;border-radius:6px;" />
 
 ## Output Requirements
 - Output ONLY raw HTML. Start with <!DOCTYPE html>, end with </html>. No markdown fencing.
@@ -323,6 +350,27 @@ to create a comprehensive presentation. Break each page into multiple slides.
             for para in content["key_paragraphs"]:
                 page_info += f"\n  {para}"
 
+        if content.get("images"):
+            img_count = len(content["images"])
+            named_imgs = [img for img in content["images"] if img.get("name")]
+            page_info += f"\n\n{'='*40}"
+            page_info += f"\nIMAGES FOUND: {img_count} total ({len(named_imgs)} with names)"
+            page_info += f"\n⚠️ YOU MUST include ALL {img_count} images in the presentation!"
+            page_info += f"\n⚠️ Each image MUST have its NAME displayed below it!"
+            if img_count > 8:
+                slides_needed = (img_count + 7) // 8
+                page_info += f"\n⚠️ Create {slides_needed}+ team slides to fit all {img_count} people (max 6-8 per slide)"
+            page_info += f"\n{'='*40}"
+            for i, img in enumerate(content["images"], 1):
+                page_info += f"\n  [{i}/{img_count}] IMAGE:"
+                page_info += f"\n    URL: {img['src']}"
+                page_info += f"\n    NAME: {img.get('name') or '(unnamed)'}"
+                page_info += f"\n    ROLE: {img.get('role') or '(no role)'}"
+                if img.get("alt"):
+                    page_info += f"\n    ALT: {img['alt']}"
+                if img.get("description"):
+                    page_info += f"\n    INFO: {img['description']}"
+
         if content.get("nav_items"):
             page_info += f"\n\nNavigation: {', '.join(content['nav_items'][:10])}"
 
@@ -334,8 +382,8 @@ to create a comprehensive presentation. Break each page into multiple slides.
         bg_name = os.path.basename(background_template_path)
         bg_reminder = (
             f" BACKGROUND IMAGE IS MANDATORY: Every .slide MUST have "
-            f"background: url('/api/v1/admin/background-templates/{bg_name}') center/cover; "
-            f"— the actual image file, NOT a gradient or solid color."
+            f"background: url('/api/v1/admin/background-templates/{bg_name}') center center / 100% 100%; "
+            f"— the actual image file, NOT a gradient or solid color. Use 100% 100% sizing, NOT cover."
         )
     content_blocks.append({
         "type": "text",
@@ -345,15 +393,17 @@ to create a comprehensive presentation. Break each page into multiple slides.
             "pitch deck presentation. Use two-column flex layouts for "
             "screenshot slides (text left, image right). Start output with <!DOCTYPE html>.\n\n"
             "**ABSOLUTE RULES — VIOLATIONS = CRITICAL BUGS:**\n"
-            "1. MAX 3 CARDS PER SLIDE. 4+ items = split across multiple slides.\n"
+            "1. MAX 3 CONTENT CARDS PER SLIDE for features/services. EXCEPTION: team/people grids can have 6-8 person cards per slide using class='team-grid'.\n"
             "2. Screenshot images: max-width:38%; max-height:36vh; object-fit:contain. "
             "The image column must be max-width:38%. Image must be CENTERED in its column.\n"
-            "3. Every card/box MUST have overflow:hidden in its style.\n"
+            "3. Every content card/box MUST have overflow:hidden in its style (but NOT person-card elements).\n"
             "4. All text inside cards must fit — keep card content to heading + 2 short lines max.\n"
             "5. CTA/final slide: heading + 2 lines + button. No long URLs in visible text.\n"
             "6. Content overflowing beyond the viewport is a CRITICAL BUG.\n"
-            "7. TWO-COLUMN: text column 55%, image column 38%, gap 40px. "
-            "Image NEVER touches right edge of slide — keep 5%+ right padding."
+            "7. TWO-COLUMN layouts: add class='two-col' to the flex container. Text column 55%, image column 38%, gap 40px.\n"
+            "8. **ALL provided images MUST appear with their NAME visible below the photo.** Missing names = CRITICAL BUG.\n"
+            "9. Use class='person-card' for each team member, class='team-grid' for the grid container.\n"
+            "10. If there are many team/people images, create MULTIPLE slides to show them ALL."
             + bg_reminder
         ),
     })
@@ -417,16 +467,6 @@ to create a comprehensive presentation. Break each page into multiple slides.
         )
 
     # ── Post-processing ──
-    has_logo = "pierian-logo" in html_content
-    logo_snippet = (
-        '\n<!-- Pierian company logo -->\n'
-        '<img src="/api/v1/pierian-logo" alt="Pierian" '
-        'class="company-logo" '
-        'style="position:fixed;top:16px;right:20px;z-index:95;'
-        'height:52px;width:auto;object-fit:contain;pointer-events:none;'
-        'border-radius:6px;" />\n'
-    )
-
     # Conditional text color based on template brightness
     if template_brightness == "light" and bg_template_b64:
         text_color_rule = (
@@ -448,10 +488,11 @@ to create a comprehensive presentation. Break each page into multiple slides.
         else:
             overlay = "linear-gradient(rgba(15,23,42,0.35),rgba(15,23,42,0.45))"
         bg_image_css = (
-            f'/* Force background template image on every slide */\n'
+            f'/* Force background template image on every slide — 100% 100% to show full image without cropping */\n'
             f'.slide{{\n'
             f'  background:{overlay},'
-            f"url('/api/v1/admin/background-templates/{bg_name_css}') center center/cover no-repeat !important;\n"
+            f"url('/api/v1/admin/background-templates/{bg_name_css}') center center / 100% 100% no-repeat !important;\n"
+            f'  background-size:100% 100% !important;\n'
             f'}}\n'
         )
 
@@ -489,36 +530,32 @@ to create a comprehensive presentation. Break each page into multiple slides.
         '.slide p,.slide li{font-size:clamp(0.7rem,1.2vw,0.95rem) !important;line-height:1.3 !important;margin-bottom:0.25em !important;}\n'
         '/* Prevent any element from exceeding viewport */\n'
         '.slide>*,.zoom-wrapper>*{max-width:100% !important;}\n'
-        '/* Card/grid containment — strict height limits */\n'
-        '.slide [style*="display:grid"],.slide [style*="display: grid"]{\n'
+        '/* Card/grid containment — strict height limits (not for team-grid) */\n'
+        '.slide [style*="display:grid"]:not(.team-grid):not(.people-grid),\n'
+        '.slide [style*="display: grid"]:not(.team-grid):not(.people-grid){\n'
         '  grid-template-columns:repeat(auto-fit,minmax(180px,1fr)) !important;\n'
         '  max-height:60vh !important;\n'
         '  overflow:hidden !important;\n'
         '  gap:14px !important;\n'
         '}\n'
         '.slide [style*="display:flex"],.slide [style*="display: flex"]{\n'
-        '  flex-wrap:nowrap !important;\n'
-        '  max-height:65vh !important;\n'
+        '  max-height:70vh !important;\n'
         '  overflow:hidden !important;\n'
         '  max-width:100% !important;\n'
-        '  align-items:center !important;\n'
         '}\n'
         '/* Individual cards — strict height limit + clip content */\n'
-        '.slide [class*="card"],.slide [class*="Card"],.slide [class*="feature"],.slide [class*="Feature"],'
-        '.slide [class*="item"],.slide [class*="Item"],.slide [class*="box"],.slide [class*="Box"],'
+        '.slide [class*="card"]:not(.person-card),.slide [class*="Card"]:not(.person-card),'
+        '.slide [class*="feature"],.slide [class*="Feature"],'
+        '.slide [class*="box"],.slide [class*="Box"],'
         '.slide [class*="service"],.slide [class*="Service"],.slide [class*="benefit"],.slide [class*="Benefit"],'
         '.slide [class*="cta"],.slide [class*="CTA"],.slide [class*="action"],.slide [class*="Action"]{\n'
         '  max-height:25vh !important;\n'
         '  overflow:hidden !important;\n'
         '  padding:clamp(10px,1.5vh,20px) clamp(12px,1.5vw,24px) !important;\n'
         '}\n'
-        '/* Nth-child safety: hide 4th+ cards in grid containers */\n'
-        '.slide [style*="display:grid"]>*:nth-child(n+4),'
-        '.slide [style*="display: grid"]>*:nth-child(n+4){\n'
-        '  display:none !important;\n'
-        '}\n'
-        '/* ── IMAGE CONTAINMENT — screenshots must NEVER exceed slide ── */\n'
-        '.slide img:not(.company-logo):not([class*="icon"]):not([class*="logo"]):not([width="1"]){\n'
+        '/* NOTE: nth-child grid hiding REMOVED — team/people grids need 6-8+ items per slide */\n'
+        '/* ── IMAGE CONTAINMENT — SCREENSHOT images (from /api/v1/media/) must NEVER exceed slide ── */\n'
+        '.slide img[src*="/api/v1/media/"]{\n'
         '  max-width:38vw !important;\n'
         '  max-height:36vh !important;\n'
         '  width:auto !important;\n'
@@ -526,22 +563,23 @@ to create a comprehensive presentation. Break each page into multiple slides.
         '  object-fit:contain !important;\n'
         '  border-radius:12px;\n'
         '}\n'
-        '/* ── Two-column layouts: STRICT width constraints on both columns ── */\n'
-        '.slide [style*="display:flex"]>*,.slide [style*="display: flex"]>*{\n'
+        '/* ── Two-column layouts (text + screenshot): STRICT width constraints ── */\n'
+        '/* Only apply to 2-child flex containers (two-column layouts), not team grids */\n'
+        '.slide .two-col>*:first-child{\n'
         '  overflow:hidden !important;\n'
         '  min-width:0 !important;\n'
         '  max-width:55% !important;\n'
-        '  flex-shrink:1 !important;\n'
+        '  flex:1 1 55% !important;\n'
         '}\n'
-        '/* Image column (typically the 2nd child): cap at 42% so it stays well within the slide */\n'
-        '.slide [style*="display:flex"]>*:last-child,.slide [style*="display: flex"]>*:last-child{\n'
+        '.slide .two-col>*:last-child{\n'
         '  max-width:42% !important;\n'
+        '  flex:0 0 38% !important;\n'
         '  display:flex !important;\n'
         '  align-items:center !important;\n'
         '  justify-content:center !important;\n'
         '}\n'
-        '/* Images inside flex layouts: constrain relative to their parent AND viewport */\n'
-        '.slide [style*="display:flex"] img,.slide [style*="display: flex"] img{\n'
+        '/* Screenshot images inside two-column layouts */\n'
+        '.slide .two-col img[src*="/api/v1/media/"]{\n'
         '  max-height:36vh !important;\n'
         '  max-width:90% !important;\n'
         '  width:auto !important;\n'
@@ -550,8 +588,61 @@ to create a comprehensive presentation. Break each page into multiple slides.
         '  display:block !important;\n'
         '  margin:0 auto !important;\n'
         '}\n'
-        '.company-logo{height:52px !important;width:auto !important;'
-        'position:fixed !important;}\n'
+        '/* External website images: reasonable sizing without overflow */\n'
+        '.slide img[src^="http"]:not([src*="/api/v1/"]){\n'
+        '  max-width:200px !important;\n'
+        '  max-height:200px !important;\n'
+        '  object-fit:cover !important;\n'
+        '  display:block !important;\n'
+        '}\n'
+        '/* Team/people photos — circular style, proper sizing */\n'
+        '.slide .team-photo,.slide .person-photo,\n'
+        '.slide img[style*="border-radius: 50%"],\n'
+        '.slide img[style*="border-radius:50%"]{\n'
+        '  width:120px !important;\n'
+        '  height:120px !important;\n'
+        '  max-width:120px !important;\n'
+        '  max-height:120px !important;\n'
+        '  object-fit:cover !important;\n'
+        '  flex-shrink:0 !important;\n'
+        '  border-radius:50% !important;\n'
+        '}\n'
+        '/* Grid/flex of people cards: allow proper flow */\n'
+        '.slide .team-grid,.slide .people-grid{\n'
+        '  display:grid !important;\n'
+        '  grid-template-columns:repeat(auto-fill, minmax(140px,1fr)) !important;\n'
+        '  gap:20px !important;\n'
+        '  max-height:75vh !important;\n'
+        '  overflow:hidden !important;\n'
+        '  width:100% !important;\n'
+        '  max-width:100% !important;\n'
+        '}\n'
+        '.slide .team-grid>*,.slide .people-grid>*{\n'
+        '  max-width:100% !important;\n'
+        '  overflow:hidden !important;\n'
+        '  text-align:center !important;\n'
+        '}\n'
+        '/* Person card within team grid: ensure name is visible */\n'
+        '.slide .person-card{\n'
+        '  display:flex !important;\n'
+        '  flex-direction:column !important;\n'
+        '  align-items:center !important;\n'
+        '  gap:6px !important;\n'
+        '  padding:8px !important;\n'
+        '  max-height:none !important;\n'
+        '  overflow:visible !important;\n'
+        '}\n'
+        '.slide .person-card .person-name{\n'
+        '  font-weight:600 !important;\n'
+        '  font-size:clamp(0.65rem,1vw,0.85rem) !important;\n'
+        '  line-height:1.2 !important;\n'
+        '  text-align:center !important;\n'
+        '}\n'
+        '.slide .person-card .person-role{\n'
+        '  font-size:clamp(0.55rem,0.8vw,0.7rem) !important;\n'
+        '  opacity:0.7 !important;\n'
+        '  text-align:center !important;\n'
+        '}\n'
         '/* Bullet lists: strict limit */\n'
         '.slide ul,.slide ol{max-height:45vh !important;overflow:hidden !important;}\n'
         '.slide ul>li:nth-child(n+5),.slide ol>li:nth-child(n+5){display:none !important;}\n'
@@ -718,15 +809,6 @@ window.addEventListener("resize",function(){setTimeout(autoFitSlides,150);});
 })();
 </script>
 """
-
-    if not has_logo and "<body" in html_content.lower():
-        html_content = re.sub(
-            r'(<body[^>]*>)',
-            r'\1' + logo_snippet,
-            html_content,
-            count=1,
-            flags=re.IGNORECASE,
-        )
 
     if "</head>" in html_content.lower():
         html_content = html_content.replace("</head>", safety_css + "</head>", 1)

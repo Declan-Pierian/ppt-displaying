@@ -84,7 +84,7 @@ def _is_page_url(url: str) -> bool:
     return True
 
 
-def _extract_page_content(html: str) -> dict:
+def _extract_page_content(html: str, page_url: str = "") -> dict:
     """Use BeautifulSoup to extract rich structured content from HTML."""
     from bs4 import BeautifulSoup
 
@@ -179,6 +179,202 @@ def _extract_page_content(html: str) -> dict:
                 if text and len(text) > 5:
                     hero_text.append(text[:200])
 
+    # ── Extract meaningful images WITH their associated content ──
+    # Strategy: for each <img>, walk up the DOM to find its containing
+    # "card" or "item" block, then extract ALL text from that block.
+    # This preserves the image ↔ person/product/feature association.
+    images = []
+    seen_srcs = set()
+
+    _skip_img_patterns = (
+        "data:image/gif", "data:image/svg", "data:image/png;base64,iVBOR",
+        "pixel", "spacer", "blank", "transparent", "1x1",
+        "facebook.com", "twitter.com", "google-analytics", "doubleclick",
+        "gravatar.com/avatar", ".svg", "wp-emoji", "emoji", "smilies",
+        "loading", "spinner", "placeholder",
+    )
+
+    def _is_item_container(tag):
+        """Heuristic: is this tag a meaningful content container (card, item, person)?"""
+        if tag.name not in ("div", "li", "article", "section", "a", "figure", "td"):
+            return False
+        cls = " ".join(tag.get("class", []))
+        # Common card/item class patterns
+        if re.search(r'card|member|team|person|profile|staff|employee|'
+                      r'item|product|feature|service|post|entry|col|'
+                      r'grid-item|portfolio|testimonial|author|speaker',
+                      cls, re.I):
+            return True
+        # Or if the container has both an image and some text (generic card)
+        has_img = tag.find("img") is not None
+        text_len = len(tag.get_text(strip=True))
+        if has_img and 10 < text_len < 600:
+            return True
+        return False
+
+    def _find_content_container(img_tag):
+        """Walk up from an <img> to find its meaningful content container."""
+        current = img_tag.parent
+        depth = 0
+        while current and depth < 6:
+            if current.name in ("body", "html", "main", "header", "footer"):
+                break
+            if _is_item_container(current):
+                return current
+            current = current.parent
+            depth += 1
+        # Fallback: return immediate parent if it has some text
+        parent = img_tag.parent
+        if parent and len(parent.get_text(strip=True)) > 5:
+            return parent
+        return None
+
+    def _extract_container_texts(container) -> dict:
+        """Extract structured text from a content container."""
+        result = {"name": "", "role": "", "description": ""}
+
+        # Try to find a heading (person name, product name, etc.)
+        heading = container.find(["h1", "h2", "h3", "h4", "h5", "h6"])
+        if heading:
+            result["name"] = heading.get_text(strip=True)[:120]
+
+        # Try to find a role/subtitle — typically a <p>, <span>, or <small> right after heading
+        # or elements with class containing "title", "role", "position", "subtitle"
+        role_el = container.find(
+            class_=re.compile(r'title|role|position|subtitle|designation|job', re.I)
+        )
+        if role_el:
+            result["role"] = role_el.get_text(strip=True)[:100]
+
+        # If no heading found, try <strong> or first text element
+        if not result["name"]:
+            strong = container.find("strong")
+            if strong:
+                result["name"] = strong.get_text(strip=True)[:120]
+
+        # If still no name, use the first meaningful line of text
+        if not result["name"]:
+            for el in container.find_all(["span", "p", "div", "a"], recursive=True):
+                txt = el.get_text(strip=True)
+                if 3 < len(txt) < 80 and not txt.startswith("http"):
+                    result["name"] = txt
+                    break
+
+        # Get remaining description text (exclude what we already captured)
+        all_text = container.get_text(separator="\n", strip=True)
+        lines = [l.strip() for l in all_text.split("\n") if l.strip()]
+        desc_parts = []
+        for line in lines:
+            if line == result["name"] or line == result["role"]:
+                continue
+            if 5 < len(line) < 200:
+                desc_parts.append(line)
+        result["description"] = " | ".join(desc_parts[:3])
+
+        return result
+
+    def _get_best_src(img_tag):
+        """Get the best image source URL from an img tag, trying multiple attributes."""
+        # Priority: src, data-src, data-lazy-src, data-original, srcset (first entry)
+        for attr in ("src", "data-src", "data-lazy-src", "data-original",
+                      "data-bg", "data-image"):
+            val = img_tag.get(attr, "").strip()
+            if val and not val.startswith("data:"):
+                return val
+
+        # Try srcset — pick the largest image
+        srcset = img_tag.get("srcset", "").strip()
+        if srcset:
+            entries = [e.strip().split()[0] for e in srcset.split(",") if e.strip()]
+            if entries:
+                return entries[-1]  # Last entry is typically the largest
+
+        # Fallback to src even if it's data: (will be filtered later)
+        return img_tag.get("src", "").strip()
+
+    for img_tag in soup.find_all("img"):
+        src = _get_best_src(img_tag)
+        if not src or src.startswith("data:image/gif") or src.startswith("data:image/svg"):
+            continue
+
+        # Skip tiny images
+        w = img_tag.get("width", "")
+        h = img_tag.get("height", "")
+        try:
+            if w and int(str(w).replace("px", "")) < 40:
+                continue
+            if h and int(str(h).replace("px", "")) < 40:
+                continue
+        except (ValueError, TypeError):
+            pass
+
+        # Resolve to absolute URL
+        if page_url and not src.startswith(("http://", "https://")):
+            src = urljoin(page_url, src)
+
+        if not src.startswith(("http://", "https://")):
+            continue
+        if src in seen_srcs:
+            continue
+
+        src_lower = src.lower()
+        if any(pat in src_lower for pat in _skip_img_patterns):
+            continue
+
+        seen_srcs.add(src)
+        alt = img_tag.get("alt", "").strip()
+
+        # Walk up DOM to find content container & extract associated text
+        container = _find_content_container(img_tag)
+        assoc_text = {"name": "", "role": "", "description": ""}
+        if container:
+            assoc_text = _extract_container_texts(container)
+
+        # Use alt text as fallback for name
+        if not assoc_text["name"] and alt:
+            assoc_text["name"] = alt
+
+        images.append({
+            "src": src,
+            "alt": alt,
+            "name": assoc_text["name"],
+            "role": assoc_text["role"],
+            "description": assoc_text["description"],
+        })
+
+        if len(images) >= 60:  # Allow many images for team pages etc.
+            break
+
+    # ── Also extract CSS background-image URLs from people/team containers ──
+    if len(images) < 60:
+        for el in soup.find_all(style=re.compile(r'background(?:-image)?\s*:', re.I)):
+            if len(images) >= 60:
+                break
+            style = el.get("style", "")
+            bg_match = re.search(r'url\(["\']?(https?://[^"\')\s]+)["\']?\)', style)
+            if not bg_match:
+                continue
+            bg_src = bg_match.group(1)
+            if bg_src in seen_srcs:
+                continue
+            bg_lower = bg_src.lower()
+            if any(pat in bg_lower for pat in _skip_img_patterns):
+                continue
+            # Only include if it's in a meaningful container
+            container = _find_content_container(el) or el
+            assoc_text = _extract_container_texts(container)
+            if not assoc_text["name"]:
+                # Skip background images without associated text
+                continue
+            seen_srcs.add(bg_src)
+            images.append({
+                "src": bg_src,
+                "alt": "",
+                "name": assoc_text["name"],
+                "role": assoc_text["role"],
+                "description": assoc_text["description"],
+            })
+
     return {
         "title": title,
         "meta_description": meta_desc,
@@ -188,6 +384,7 @@ def _extract_page_content(html: str) -> dict:
         "cards": cards[:10],
         "list_items": list_items[:15],
         "hero_text": hero_text[:5],
+        "images": images,
     }
 
 
@@ -363,13 +560,29 @@ def _crawl_one_page(url: str, presentation_id: int, media_dir: str) -> dict:
         page.goto(url, wait_until="networkidle", timeout=30000)
         page.wait_for_timeout(2000)
 
+        # Scroll through the entire page to trigger lazy-loaded images/content
+        page.evaluate("""
+            async () => {
+                const delay = ms => new Promise(r => setTimeout(r, ms));
+                const totalHeight = document.body.scrollHeight;
+                const step = window.innerHeight;
+                for (let pos = 0; pos < totalHeight; pos += step) {
+                    window.scrollTo(0, pos);
+                    await delay(400);
+                }
+                // Scroll back to top
+                window.scrollTo(0, 0);
+            }
+        """)
+        page.wait_for_timeout(2000)  # Wait for lazy images to load after scrolling
+
         # Screenshot
         screenshot_path = os.path.join(screenshots_dir, "page_1.png")
         page.screenshot(path=screenshot_path, full_page=False)
 
         # Extract content
         html = page.content()
-        content = _extract_page_content(html)
+        content = _extract_page_content(html, page_url=url)
         page_title = page.title() or content.get("title", "")
 
         print(f"PROGRESS:1:1:Captured single page: {url[:70]}", file=sys.stderr, flush=True)
@@ -503,7 +716,7 @@ def _crawl_impl(
 
                 # Extract content
                 html = page.content()
-                content = _extract_page_content(html)
+                content = _extract_page_content(html, page_url=page_url)
                 page_title = page.title() or content.get("title", "")
 
                 pages_data.append({
@@ -546,7 +759,7 @@ def _crawl_impl(
                     page.screenshot(path=screenshot_path, full_page=False)
 
                     html = page.content()
-                    content = _extract_page_content(html)
+                    content = _extract_page_content(html, page_url=common_url)
                     page_title = page.title() or content.get("title", "")
 
                     pages_data.append({
