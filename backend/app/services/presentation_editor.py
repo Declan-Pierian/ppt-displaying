@@ -82,6 +82,46 @@ def replace_slide_in_html(html_content: str, slide_index: int, new_slide_html: s
     return str(soup)
 
 
+def _extract_style_context(html_content: str) -> str:
+    """Extract CSS <style> blocks from the HTML for context."""
+    soup = BeautifulSoup(html_content, "html.parser")
+    styles = []
+    for tag in soup.find_all("style"):
+        text = tag.get_text(strip=True)
+        if text:
+            # Truncate if very long — just the first 3000 chars of CSS
+            styles.append(text[:3000])
+    return "\n".join(styles)[:4000]
+
+
+def _clean_claude_response(raw: str) -> str:
+    """Clean Claude's response: strip markdown fencing and whitespace."""
+    text = raw.strip()
+
+    # Handle markdown fencing with optional language tag: ```html, ```HTML, ```css, etc.
+    if text.startswith("```"):
+        lines = text.split("\n")
+        # Remove opening fence (may have language tag like ```html)
+        if lines[0].startswith("```"):
+            lines = lines[1:]
+        # Remove closing fence
+        if lines and lines[-1].strip().startswith("```"):
+            lines = lines[:-1]
+        text = "\n".join(lines).strip()
+
+    # Sometimes Claude wraps in multiple fences
+    if text.startswith("```"):
+        return _clean_claude_response(text)
+
+    return text
+
+
+def _get_slide_text_preview(slide_html: str, max_len: int = 150) -> str:
+    """Extract a brief text preview from slide HTML."""
+    soup = BeautifulSoup(slide_html, "html.parser")
+    return soup.get_text(separator=" ", strip=True)[:max_len]
+
+
 # ── Version management ──────────────────────────────────────────────────────
 
 def _history_path(pres_dir: str) -> str:
@@ -112,16 +152,52 @@ def _backup_current(pres_dir: str, version: int):
 
 # ── Claude edit API ─────────────────────────────────────────────────────────
 
-EDIT_SYSTEM_PROMPT = """You are an expert HTML/CSS presentation editor. You receive the HTML of a specific slide from a presentation and a user's edit request.
+EDIT_SYSTEM_PROMPT = """\
+You are a powerful HTML presentation editor. An admin user wants to modify a presentation slide. \
+You will receive the slide's current HTML and the user's edit request.
+
+Your job is to fulfill the user's request, even if it is brief or vague. \
+Interpret the intent behind the request and make smart, appropriate changes. \
+Users are non-technical — they may say things like "make it look better", "fix the layout", \
+"add more info about X", or "change the color". Use your judgment.
+
+CRITICAL RULES:
+1. Output ONLY the complete modified <div class="slide ..."> element — nothing else.
+2. NO markdown fencing, NO explanations, NO comments. Raw HTML only.
+3. Your output MUST start with <div and end with </div>.
+4. Preserve all existing CSS classes, IDs, and data attributes unless the change requires modifying them.
+5. Keep all images, links, and elements the user didn't mention.
+6. Maintain the same theme, dark backgrounds, fonts, and overall presentation style.
+
+COMMON EDITS AND HOW TO HANDLE THEM:
+- "change title/heading to X" → Update the heading text, keep all styling.
+- "change color" or "make it blue/red/etc" → Update the relevant color/background-color in inline styles.
+- "add a point/bullet about X" → Add an <li> or paragraph with that content in the appropriate section.
+- "remove X" → Remove that element while keeping the rest intact.
+- "make it bigger/smaller" → Adjust font-size or padding.
+- "make it look better" or "improve" → Improve spacing, alignment, visual hierarchy. Add subtle design polish.
+- "change background" → Update the slide's background-color or background-image style.
+- "add an image" → Add a placeholder <img> with a descriptive alt text and a placeholder src.
+- "swap sections" or "rearrange" → Reorder the elements as requested.
+- "change font" → Update font-family in inline styles.
+- If the user says something that doesn't make sense for the slide, make the closest reasonable interpretation."""
+
+
+ANALYSIS_SYSTEM_PROMPT = """\
+You analyze presentation edit requests to determine which slides need to be modified. \
+You receive a summary of all slides and the user's request.
+
+Respond with ONLY a JSON array of 1-based slide numbers. Examples:
+- [1] — only slide 1
+- [2, 5] — slides 2 and 5
+- [1, 2, 3, 4, 5] — all five slides
 
 Rules:
-1. Output ONLY the modified <div class="slide ..."> element. Nothing else.
-2. Preserve ALL existing CSS classes, IDs, data attributes, and inline styles unless the user explicitly asks to change them.
-3. Only change what the user specifically requested. Do not add, remove, or rearrange other content.
-4. Keep the same overall structure and styling (dark theme, fonts, colors).
-5. Keep all images, links, and interactive elements that the user didn't mention.
-6. Output raw HTML only. No markdown fencing, no explanation, no comments.
-7. The output must start with <div and end with </div>."""
+- If the user mentions specific slide numbers, use those.
+- If the user says "all slides" or the change applies globally (like "change all headings"), include all slides.
+- If the user's request is vague (like "change the title"), pick the most likely slide (usually slide 1).
+- If the user mentions content that only appears on one slide, pick that slide.
+- When in doubt, pick fewer slides rather than all of them."""
 
 
 def apply_chat_edit(
@@ -142,6 +218,7 @@ def apply_chat_edit(
 
     Returns dict with success, version, modified_slides, message, token_usage.
     """
+    edit_model = settings.CLAUDE_EDIT_MODEL or settings.CLAUDE_MODEL
     api_key = settings.CLAUDE_API_KEY
     if not api_key:
         return {"success": False, "message": "CLAUDE_API_KEY not configured", "version": 0, "modified_slides": [], "token_usage": None}
@@ -158,6 +235,9 @@ def apply_chat_edit(
         return {"success": False, "message": "Could not parse any slides from the HTML", "version": 0, "modified_slides": [], "token_usage": None}
 
     total_slides = len(slides)
+
+    # Extract CSS context for Claude (so it knows available styles)
+    css_context = _extract_style_context(html_content)
 
     # Determine which slides to edit
     if slide_numbers:
@@ -181,124 +261,57 @@ def apply_chat_edit(
     try:
         client = anthropic.Anthropic(api_key=api_key)
 
-        if target_indices is not None:
-            # Edit specific slides
-            for idx in target_indices:
-                slide_html = slides[idx]["html"]
+        # If no specific slides selected, let AI decide which ones to edit
+        if target_indices is None:
+            target_indices = _detect_target_slides(
+                client, edit_model, slides, total_slides, prompt, total_token_usage
+            )
 
-                user_msg = (
-                    f"This is slide {idx + 1} of {total_slides} in the presentation.\n\n"
-                    f"Current slide HTML:\n```html\n{slide_html}\n```\n\n"
-                    f"User's edit request: \"{prompt}\"\n\n"
-                    f"Output the modified slide HTML:"
-                )
+        # Edit each target slide
+        for idx in target_indices:
+            slide_html = slides[idx]["html"]
 
-                response = client.messages.create(
-                    model=settings.CLAUDE_MODEL,
-                    max_tokens=8000,
-                    system=EDIT_SYSTEM_PROMPT,
-                    messages=[{"role": "user", "content": user_msg}],
-                )
+            # Build context: include neighboring slide summaries for consistency
+            context_parts = []
+            if idx > 0:
+                prev_text = _get_slide_text_preview(slides[idx - 1]["html"])
+                context_parts.append(f"Previous slide (slide {idx}): {prev_text}")
+            if idx < total_slides - 1:
+                next_text = _get_slide_text_preview(slides[idx + 1]["html"])
+                context_parts.append(f"Next slide (slide {idx + 2}): {next_text}")
 
-                new_html = response.content[0].text.strip()
+            neighbor_context = ""
+            if context_parts:
+                neighbor_context = "\n\nNeighboring slides for context:\n" + "\n".join(context_parts)
 
-                # Clean markdown fencing if present
-                if new_html.startswith("```"):
-                    lines = new_html.split("\n")
-                    if lines[0].startswith("```"):
-                        lines = lines[1:]
-                    if lines and lines[-1].strip() == "```":
-                        lines = lines[:-1]
-                    new_html = "\n".join(lines)
+            css_section = ""
+            if css_context:
+                css_section = f"\n\nPresentation CSS (for reference — use matching classes/styles):\n{css_context}\n"
 
-                # Ensure it starts with a div
-                if not new_html.strip().startswith("<div"):
-                    logger.warning("Claude response doesn't start with <div>, wrapping it")
-                    new_html = f'<div class="slide">{new_html}</div>'
+            user_msg = (
+                f"Slide {idx + 1} of {total_slides}.{neighbor_context}{css_section}\n\n"
+                f"Current slide HTML:\n{slide_html}\n\n"
+                f"Edit request: {prompt}"
+            )
 
+            new_html = _call_claude_for_edit(client, edit_model, user_msg, total_token_usage)
+
+            if new_html:
                 html_content = replace_slide_in_html(html_content, idx, new_html)
                 # Re-parse after each replacement since positions change
                 slides = parse_slides_from_html(html_content)
                 modified_indices.append(idx)
-
-                if hasattr(response, "usage") and response.usage:
-                    total_token_usage["input_tokens"] += response.usage.input_tokens
-                    total_token_usage["output_tokens"] += response.usage.output_tokens
-
-        else:
-            # No specific slides: send slide summaries + prompt, let Claude decide
-            slide_summaries = []
-            for s in slides:
-                # Extract a brief text preview from each slide
-                soup = BeautifulSoup(s["html"], "html.parser")
-                text = soup.get_text(separator=" ", strip=True)[:200]
-                slide_summaries.append(f"Slide {s['index'] + 1}: {text}")
-
-            analysis_msg = (
-                f"The presentation has {total_slides} slides:\n\n"
-                + "\n".join(slide_summaries) + "\n\n"
-                f"User's edit request: \"{prompt}\"\n\n"
-                f"Which slide numbers should be modified? Reply with ONLY a JSON array of "
-                f"1-based slide numbers, e.g. [1, 3, 5]. No explanation."
-            )
-
-            analysis_resp = client.messages.create(
-                model=settings.CLAUDE_MODEL,
-                max_tokens=200,
-                system="You determine which slides need editing. Output only a JSON array of slide numbers.",
-                messages=[{"role": "user", "content": analysis_msg}],
-            )
-
-            if hasattr(analysis_resp, "usage") and analysis_resp.usage:
-                total_token_usage["input_tokens"] += analysis_resp.usage.input_tokens
-                total_token_usage["output_tokens"] += analysis_resp.usage.output_tokens
-
-            # Parse the slide numbers from response
-            analysis_text = analysis_resp.content[0].text.strip()
-            match = re.search(r'\[[\d,\s]+\]', analysis_text)
-            if match:
-                detected_numbers = json.loads(match.group())
-                target_indices = [n - 1 for n in detected_numbers if 1 <= n <= total_slides]
             else:
-                # Fallback: apply to all slides
-                target_indices = list(range(total_slides))
+                logger.warning("Claude returned invalid HTML for slide %d, skipping", idx + 1)
 
-            # Now edit the detected slides
-            for idx in target_indices:
-                slide_html = slides[idx]["html"]
-                user_msg = (
-                    f"This is slide {idx + 1} of {total_slides} in the presentation.\n\n"
-                    f"Current slide HTML:\n```html\n{slide_html}\n```\n\n"
-                    f"User's edit request: \"{prompt}\"\n\n"
-                    f"Output the modified slide HTML:"
-                )
-
-                response = client.messages.create(
-                    model=settings.CLAUDE_MODEL,
-                    max_tokens=8000,
-                    system=EDIT_SYSTEM_PROMPT,
-                    messages=[{"role": "user", "content": user_msg}],
-                )
-
-                new_html = response.content[0].text.strip()
-                if new_html.startswith("```"):
-                    lines = new_html.split("\n")
-                    if lines[0].startswith("```"):
-                        lines = lines[1:]
-                    if lines and lines[-1].strip() == "```":
-                        lines = lines[:-1]
-                    new_html = "\n".join(lines)
-
-                if not new_html.strip().startswith("<div"):
-                    new_html = f'<div class="slide">{new_html}</div>'
-
-                html_content = replace_slide_in_html(html_content, idx, new_html)
-                slides = parse_slides_from_html(html_content)
-                modified_indices.append(idx)
-
-                if hasattr(response, "usage") and response.usage:
-                    total_token_usage["input_tokens"] += response.usage.input_tokens
-                    total_token_usage["output_tokens"] += response.usage.output_tokens
+        if not modified_indices:
+            return {
+                "success": False,
+                "message": "AI could not produce valid edits. Try rephrasing your request with more detail.",
+                "version": current_version,
+                "modified_slides": [],
+                "token_usage": total_token_usage if any(total_token_usage.values()) else None,
+            }
 
         # Save updated HTML
         with open(webpage_path, "w", encoding="utf-8") as f:
@@ -339,6 +352,112 @@ def apply_chat_edit(
             "modified_slides": [],
             "token_usage": total_token_usage if any(total_token_usage.values()) else None,
         }
+
+
+def _detect_target_slides(
+    client: anthropic.Anthropic,
+    model: str,
+    slides: list[dict],
+    total_slides: int,
+    prompt: str,
+    token_usage: dict,
+) -> list[int]:
+    """Use Claude to determine which slides should be edited based on the prompt."""
+    slide_summaries = []
+    for s in slides:
+        text = _get_slide_text_preview(s["html"], 200)
+        slide_summaries.append(f"Slide {s['index'] + 1}: {text}")
+
+    analysis_msg = (
+        f"The presentation has {total_slides} slides:\n\n"
+        + "\n".join(slide_summaries) + "\n\n"
+        f"User's edit request: {prompt}\n\n"
+        f"Which slides should be modified? Output ONLY a JSON array like [1, 3]."
+    )
+
+    try:
+        resp = client.messages.create(
+            model=model,
+            max_tokens=200,
+            system=ANALYSIS_SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": analysis_msg}],
+        )
+
+        if hasattr(resp, "usage") and resp.usage:
+            token_usage["input_tokens"] += resp.usage.input_tokens
+            token_usage["output_tokens"] += resp.usage.output_tokens
+
+        analysis_text = resp.content[0].text.strip()
+        logger.info("Slide detection response: %s", analysis_text)
+
+        # Try to extract JSON array — be flexible about format
+        # Handle: [1, 3], [1,3], "slides [1, 3]", etc.
+        match = re.search(r'\[[\d,\s]+\]', analysis_text)
+        if match:
+            detected = json.loads(match.group())
+            indices = [n - 1 for n in detected if isinstance(n, int) and 1 <= n <= total_slides]
+            if indices:
+                return indices
+
+        # Fallback: try to extract bare numbers like "1, 3" or "Slide 1"
+        numbers = [int(x) for x in re.findall(r'\d+', analysis_text)]
+        indices = [n - 1 for n in numbers if 1 <= n <= total_slides]
+        if indices:
+            return indices
+
+    except Exception as e:
+        logger.warning("Slide detection failed: %s, defaulting to slide 1", e)
+
+    # Final fallback: edit slide 1 instead of all slides
+    return [0]
+
+
+def _call_claude_for_edit(
+    client: anthropic.Anthropic,
+    model: str,
+    user_msg: str,
+    token_usage: dict,
+    attempt: int = 1,
+) -> str | None:
+    """Call Claude API for a slide edit. Retries once if response is invalid."""
+    max_attempts = 2
+
+    response = client.messages.create(
+        model=model,
+        max_tokens=16000,
+        system=EDIT_SYSTEM_PROMPT,
+        messages=[{"role": "user", "content": user_msg}],
+    )
+
+    if hasattr(response, "usage") and response.usage:
+        token_usage["input_tokens"] += response.usage.input_tokens
+        token_usage["output_tokens"] += response.usage.output_tokens
+
+    raw = response.content[0].text
+    new_html = _clean_claude_response(raw)
+
+    # Validate: must start with <div
+    if new_html.strip().startswith("<div"):
+        return new_html
+
+    # Invalid response — retry once with a corrective prompt
+    if attempt < max_attempts:
+        logger.warning("Claude response didn't start with <div (attempt %d), retrying", attempt)
+        retry_msg = (
+            user_msg + "\n\n"
+            "IMPORTANT: Your previous response was invalid. "
+            "You MUST output ONLY the raw HTML starting with <div class=\"slide and ending with </div>. "
+            "No markdown, no explanation, no fencing. Just the HTML."
+        )
+        return _call_claude_for_edit(client, model, retry_msg, token_usage, attempt + 1)
+
+    # Last resort: try to wrap it
+    logger.warning("Claude response still invalid after retry, attempting to wrap")
+    if "<" in new_html:
+        # Has some HTML in it, wrap in slide div
+        return f'<div class="slide">{new_html}</div>'
+
+    return None
 
 
 def undo_edit(pres_dir: str) -> dict:

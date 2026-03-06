@@ -360,10 +360,14 @@ export default function UploadPage() {
           />
         </div>
 
-        {/* Step counter */}
+        {/* Step counter — hide "of Y" during crawling since total is unknown */}
         {!isGenerating && (
           <p className="progress-slide-text" style={{ textAlign: "center" }}>
-            Step <strong>{progress.current_slide}</strong> of <strong>{progress.total_slides}</strong>
+            {progress.phase === "crawling" ? (
+              <>Page <strong>{progress.current_slide}</strong> crawled</>
+            ) : (
+              <>Step <strong>{progress.current_slide}</strong> of <strong>{progress.total_slides}</strong></>
+            )}
           </p>
         )}
 

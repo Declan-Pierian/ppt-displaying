@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     # Claude API (for HTML webpage generation)
     CLAUDE_API_KEY: str = ""
     CLAUDE_MODEL: str = "claude-haiku-4-5-20251001"
+    CLAUDE_EDIT_MODEL: str = "claude-sonnet-4-20250514"
 
     # Website crawling
     MAX_CRAWL_PAGES: int = 15
