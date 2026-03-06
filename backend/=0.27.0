@@ -1,0 +1,10 @@
+Requirement already satisfied: httpx in c:\users\declan.rodrigues\appdata\local\programs\python\python311\lib\site-packages (0.28.1)
+Requirement already satisfied: anyio in c:\users\declan.rodrigues\appdata\local\programs\python\python311\lib\site-packages (from httpx) (4.12.1)
+Requirement already satisfied: certifi in c:\users\declan.rodrigues\appdata\local\programs\python\python311\lib\site-packages (from httpx) (2026.2.25)
+Requirement already satisfied: httpcore==1.* in c:\users\declan.rodrigues\appdata\local\programs\python\python311\lib\site-packages (from httpx) (1.0.9)
+Requirement already satisfied: idna in c:\users\declan.rodrigues\appdata\local\programs\python\python311\lib\site-packages (from httpx) (3.11)
+Requirement already satisfied: h11>=0.16 in c:\users\declan.rodrigues\appdata\local\programs\python\python311\lib\site-packages (from httpcore==1.*->httpx) (0.16.0)
+Requirement already satisfied: typing_extensions>=4.5 in c:\users\declan.rodrigues\appdata\local\programs\python\python311\lib\site-packages (from anyio->httpx) (4.15.0)
+
+[notice] A new release of pip available: 22.3 -> 26.0.1
+[notice] To update, run: python.exe -m pip install --upgrade pip

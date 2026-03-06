@@ -41,6 +41,26 @@ class PresentationToggleRequest(BaseModel):
 class WebsiteSubmitRequest(BaseModel):
     url: str
     max_pages: int = 0  # 0 = crawl all discovered pages (up to safety cap)
+    background_template: str | None = None  # e.g. "Pierian_Background_1.jpg"
+    force_regenerate: bool = False  # If True, regenerate even if URL was already processed
+
+
+class URLCheckRequest(BaseModel):
+    url: str
+
+
+class URLCheckResponse(BaseModel):
+    exists: bool
+    presentation_id: int | None = None
+    title: str | None = None
+    status: str | None = None
+    created_at: datetime | None = None
+
+
+class BackgroundTemplateResponse(BaseModel):
+    name: str
+    filename: str
+    url: str
 
 
 class UploadLogResponse(BaseModel):

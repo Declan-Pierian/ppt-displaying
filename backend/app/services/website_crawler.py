@@ -2,9 +2,11 @@
 
 Enhanced crawler that uses multiple discovery strategies:
 1. Sitemap.xml parsing (finds all pages the site declares)
-2. Navigation link extraction (menus, header, footer)
-3. Page body link extraction with scrolling (lazy-loaded content)
-4. Breadth-first recursive crawl across all discovered pages
+2. Robots.txt sitemap references
+3. Navigation link extraction (menus, header, footer)
+4. Page body link extraction with scrolling (lazy-loaded content)
+5. Common URL pattern guessing (about, contact, services, etc.)
+6. Breadth-first recursive crawl across all discovered pages
 
 Runs Playwright in a SUBPROCESS to avoid Windows asyncio event loop conflicts.
 """
@@ -54,6 +56,17 @@ _SKIP_PATH_PATTERNS = (
     "/api/", "/_next/", "/static/", "/assets/",
     "#", "javascript:", "mailto:", "tel:",
 )
+
+# Common page paths to try when other discovery methods find few pages
+_COMMON_PATHS = [
+    "/about", "/about-us", "/contact", "/contact-us",
+    "/services", "/products", "/features", "/solutions",
+    "/pricing", "/team", "/careers", "/blog",
+    "/faq", "/help", "/support", "/privacy", "/terms",
+    "/portfolio", "/work", "/case-studies", "/clients",
+    "/partners", "/resources", "/news", "/events",
+    "/technology", "/platform", "/industries",
+]
 
 
 def _is_page_url(url: str) -> bool:
@@ -137,7 +150,7 @@ def _extract_page_content(html: str) -> dict:
     # Cards / feature items (common in product pages)
     cards = []
     card_selectors = soup.find_all(
-        class_=re.compile(r"card|feature|product|item|service|benefit", re.I)
+        class_=re.compile(r"card|feature|product|item|service|benefit|solution|offering", re.I)
     )
     for card in card_selectors[:20]:
         card_text = card.get_text(strip=True)
@@ -154,6 +167,18 @@ def _extract_page_content(html: str) -> dict:
             if len(list_items) >= 20:
                 break
 
+    # Hero / banner text
+    hero_text = []
+    for selector in [
+        soup.find(class_=re.compile(r"hero|banner|jumbotron|masthead", re.I)),
+        soup.find(id=re.compile(r"hero|banner", re.I)),
+    ]:
+        if selector:
+            for el in selector.find_all(["h1", "h2", "p", "span"]):
+                text = el.get_text(strip=True)
+                if text and len(text) > 5:
+                    hero_text.append(text[:200])
+
     return {
         "title": title,
         "meta_description": meta_desc,
@@ -162,6 +187,7 @@ def _extract_page_content(html: str) -> dict:
         "nav_items": list(dict.fromkeys(nav_items))[:15],
         "cards": cards[:10],
         "list_items": list_items[:15],
+        "hero_text": hero_text[:5],
     }
 
 
@@ -189,16 +215,56 @@ def _try_fetch_sitemap(page, base_url: str) -> list[str]:
     return urls
 
 
+def _try_fetch_robots_sitemaps(page, base_url: str) -> list[str]:
+    """Try to discover sitemap URLs from robots.txt."""
+    sitemap_urls = []
+    try:
+        response = page.goto(f"{base_url}/robots.txt", wait_until="domcontentloaded", timeout=10000)
+        if response and response.status == 200:
+            content = page.content()
+            # Extract Sitemap: directives
+            for match in re.findall(r"Sitemap:\s*(\S+)", content, re.IGNORECASE):
+                sitemap_urls.append(match.strip())
+            if sitemap_urls:
+                print(f"INFO:Found {len(sitemap_urls)} sitemap refs in robots.txt", file=sys.stderr, flush=True)
+    except Exception:
+        pass
+    return sitemap_urls
+
+
+def _try_common_paths(page, base_url: str, visited: set, known: set) -> list[str]:
+    """Try common page paths to discover pages not linked from navigation."""
+    new_urls = []
+    for path in _COMMON_PATHS:
+        candidate = _normalise_url(f"{base_url}{path}")
+        if candidate in visited or candidate in known:
+            continue
+        try:
+            response = page.goto(candidate, wait_until="domcontentloaded", timeout=8000)
+            if response and 200 <= response.status < 400:
+                # Verify it's actually a different page (not a redirect to homepage)
+                final_url = _normalise_url(page.url)
+                if final_url not in visited and final_url not in known:
+                    new_urls.append(candidate)
+                    known.add(candidate)
+                    print(f"INFO:Discovered common path: {path}", file=sys.stderr, flush=True)
+        except Exception:
+            continue
+    return new_urls
+
+
 def _discover_links_aggressive(page, base_url: str, visited: set, known: set) -> list[str]:
     """Aggressively extract all same-domain links from current page."""
     new_links = []
     try:
-        # Scroll to bottom to trigger lazy-loaded content
+        # Scroll through the entire page to trigger lazy-loaded content
         page.evaluate("""
             async () => {
                 const delay = ms => new Promise(r => setTimeout(r, ms));
-                for (let i = 0; i < 5; i++) {
-                    window.scrollBy(0, window.innerHeight);
+                const totalHeight = document.body.scrollHeight;
+                const step = window.innerHeight;
+                for (let pos = 0; pos < totalHeight; pos += step) {
+                    window.scrollTo(0, pos);
                     await delay(300);
                 }
                 window.scrollTo(0, 0);
@@ -212,7 +278,7 @@ def _discover_links_aggressive(page, base_url: str, visited: set, known: set) ->
             "elements => elements.map(e => e.href)",
         )
 
-        # Method 2: Also get href attributes from onclick/data-href etc.
+        # Method 2: Data attributes
         extra_links = page.eval_on_selector_all(
             "[data-href], [data-url], [data-link]",
             """elements => elements.map(e =>
@@ -222,6 +288,32 @@ def _discover_links_aggressive(page, base_url: str, visited: set, known: set) ->
             )""",
         )
         links.extend(extra_links)
+
+        # Method 3: onclick handlers with URLs
+        onclick_links = page.eval_on_selector_all(
+            "[onclick]",
+            """elements => {
+                const urls = [];
+                elements.forEach(e => {
+                    const onclick = e.getAttribute('onclick') || '';
+                    const match = onclick.match(/(?:location|href|navigate).*?['"]([^'"]+)['"]/);
+                    if (match) urls.push(match[1]);
+                });
+                return urls;
+            }""",
+        )
+        for link in onclick_links:
+            if link.startswith("/"):
+                parsed = urlparse(base_url)
+                link = f"{parsed.scheme}://{parsed.netloc}{link}"
+            links.append(link)
+
+        # Method 4: Footer links (often contain important pages)
+        footer_links = page.eval_on_selector_all(
+            "footer a[href], .footer a[href], [role='contentinfo'] a[href]",
+            "elements => elements.map(e => e.href)",
+        )
+        links.extend(footer_links)
 
         for link in links:
             if not link or not link.startswith("http"):
@@ -276,8 +368,26 @@ def _crawl_impl(
         )
         page = context.new_page()
 
-        # ── Phase 0: Try sitemap.xml for URL discovery ──
-        print("INFO:Trying sitemap.xml discovery...", file=sys.stderr, flush=True)
+        # ── Phase 0: Discovery — sitemap, robots.txt, common paths ──
+        print("INFO:Phase 0 — URL discovery via sitemap, robots.txt, common paths...", file=sys.stderr, flush=True)
+
+        # Try robots.txt for sitemap references
+        robots_sitemaps = _try_fetch_robots_sitemaps(page, base_url)
+        for sm_url in robots_sitemaps:
+            try:
+                response = page.goto(sm_url, wait_until="domcontentloaded", timeout=10000)
+                if response and response.status == 200:
+                    content = page.content()
+                    loc_matches = re.findall(r"<loc>\s*(.*?)\s*</loc>", content)
+                    for loc_url in loc_matches:
+                        norm = _normalise_url(loc_url)
+                        if norm not in known and _is_same_domain(base_url, norm) and _is_page_url(norm):
+                            urls_to_visit.append(norm)
+                            known.add(norm)
+            except Exception:
+                continue
+
+        # Try standard sitemap.xml
         sitemap_urls = _try_fetch_sitemap(page, base_url)
         for surl in sitemap_urls:
             norm = _normalise_url(surl)
@@ -289,7 +399,9 @@ def _crawl_impl(
                 urls_to_visit.append(norm)
                 known.add(norm)
 
-        # ── Phase 1: Crawl pages ──
+        print(f"INFO:Discovery found {len(known)} URLs so far", file=sys.stderr, flush=True)
+
+        # ── Phase 1: Crawl pages (BFS) ──
         idx = 0
         while urls_to_visit and idx < effective_limit:
             page_url = urls_to_visit.pop(0)
@@ -334,6 +446,47 @@ def _crawl_impl(
             except Exception as e:
                 print(f"WARN:Failed to capture {page_url}: {e}", file=sys.stderr, flush=True)
                 continue
+
+        # ── Phase 2: If we found very few pages, try common paths ──
+        if idx < 5 and idx < effective_limit:
+            print("INFO:Few pages found, trying common URL patterns...", file=sys.stderr, flush=True)
+            common_urls = _try_common_paths(page, base_url, visited, known)
+            for common_url in common_urls:
+                if idx >= effective_limit:
+                    break
+                norm = _normalise_url(common_url)
+                if norm in visited:
+                    continue
+                visited.add(norm)
+
+                try:
+                    page.goto(common_url, wait_until="networkidle", timeout=20000)
+                    page.wait_for_timeout(1500)
+
+                    screenshot_filename = f"page_{idx + 1}.png"
+                    screenshot_path = os.path.join(screenshots_dir, screenshot_filename)
+                    page.screenshot(path=screenshot_path, full_page=False)
+
+                    html = page.content()
+                    content = _extract_page_content(html)
+                    page_title = page.title() or content.get("title", "")
+
+                    pages_data.append({
+                        "page_index": idx,
+                        "page_number": idx + 1,
+                        "page_url": common_url,
+                        "page_title": page_title,
+                        "screenshot_path": f"media/screenshots/{screenshot_filename}",
+                        "content": content,
+                    })
+                    idx += 1
+                    print(
+                        f"PROGRESS:{idx}:{max(len(common_urls) + idx, idx)}:Captured page {idx}: {common_url[:70]}",
+                        file=sys.stderr, flush=True,
+                    )
+                except Exception as e:
+                    print(f"WARN:Failed to capture common path {common_url}: {e}", file=sys.stderr, flush=True)
+                    continue
 
         browser.close()
 

@@ -14,6 +14,8 @@ def init_progress(presentation_id: int, total_slides: int):
         "phase": "extraction",
         "message": "Starting extraction...",
         "started_at": time.time(),
+        "cancelled": False,
+        "token_usage": None,
     }
 
 def update_progress(presentation_id: int, current_slide: int, phase: str = "extraction", message: str = ""):
@@ -26,12 +28,13 @@ def update_progress(presentation_id: int, current_slide: int, phase: str = "extr
             "message": message,
         })
 
-def complete_progress(presentation_id: int, message: str = "Complete!"):
+def complete_progress(presentation_id: int, message: str = "Complete!", token_usage: dict | None = None):
     """Mark extraction as complete."""
     if presentation_id in _progress:
         _progress[presentation_id].update({
             "status": "complete",
             "message": message,
+            "token_usage": token_usage,
         })
 
 def fail_progress(presentation_id: int, error: str):
@@ -41,6 +44,18 @@ def fail_progress(presentation_id: int, error: str):
             "status": "failed",
             "message": error,
         })
+
+def cancel_progress(presentation_id: int):
+    """Mark a presentation as cancelled."""
+    if presentation_id in _progress:
+        _progress[presentation_id]["cancelled"] = True
+        _progress[presentation_id]["status"] = "cancelled"
+        _progress[presentation_id]["message"] = "Generation cancelled by user."
+
+def is_cancelled(presentation_id: int) -> bool:
+    """Check if a presentation has been cancelled."""
+    prog = _progress.get(presentation_id)
+    return bool(prog and prog.get("cancelled"))
 
 def get_progress(presentation_id: int) -> Optional[dict]:
     """Get current progress for a presentation."""

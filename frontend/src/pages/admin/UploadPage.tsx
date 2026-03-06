@@ -1,48 +1,124 @@
 import { useState, useCallback, useEffect, useRef } from "react";
-import { Upload, CheckCircle2, AlertCircle, Loader2, CloudUpload, FileType, Zap, Eye, Globe, Link } from "lucide-react";
+import {
+  Upload, CheckCircle2, AlertCircle, Loader2, CloudUpload, FileType,
+  Zap, Eye, Globe, Link, Image, RefreshCw, XCircle, Search, Sparkles, Coins,
+} from "lucide-react";
 import api, { API_BASE } from "../../lib/api";
 
 type Tab = "file" | "url";
+
+interface BackgroundTemplate {
+  name: string;
+  filename: string;
+  url: string;
+}
+
+interface DuplicateInfo {
+  exists: boolean;
+  presentation_id?: number;
+  title?: string;
+  status?: string;
+  created_at?: string;
+}
+
+interface ProgressData {
+  current_slide: number;
+  total_slides: number;
+  message: string;
+  status: string;
+  phase?: string;
+  token_usage?: { input_tokens: number; output_tokens: number } | null;
+}
 
 export default function UploadPage() {
   const [activeTab, setActiveTab] = useState<Tab>("file");
   const [isDragging, setIsDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [result, setResult] = useState<{ success: boolean; message: string; id?: number } | null>(null);
-  const [progress, setProgress] = useState<{ current_slide: number; total_slides: number; message: string; status: string } | null>(null);
+  const [result, setResult] = useState<{ success: boolean; message: string; id?: number; tokenUsage?: { input_tokens: number; output_tokens: number } | null } | null>(null);
+  const [progress, setProgress] = useState<ProgressData | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
+  const currentPresIdRef = useRef<number | null>(null);
 
   // URL tab state
   const [websiteUrl, setWebsiteUrl] = useState("");
-  const [maxPages, setMaxPages] = useState(0); // 0 = all pages
+  const [maxPages, setMaxPages] = useState(0);
+  const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
+  const [templates, setTemplates] = useState<BackgroundTemplate[]>([]);
+  const [loadingTemplates, setLoadingTemplates] = useState(false);
+
+  // Duplicate URL dialog
+  const [duplicateInfo, setDuplicateInfo] = useState<DuplicateInfo | null>(null);
+  const [checkingUrl, setCheckingUrl] = useState(false);
+
+  // Cancel state
+  const [cancelling, setCancelling] = useState(false);
+
+  // Load background templates when URL tab is active
+  useEffect(() => {
+    if (activeTab === "url" && templates.length === 0) {
+      setLoadingTemplates(true);
+      api.get("/admin/background-templates")
+        .then((res) => setTemplates(res.data))
+        .catch(() => {})
+        .finally(() => setLoadingTemplates(false));
+    }
+  }, [activeTab]);
 
   useEffect(() => {
     return () => { eventSourceRef.current?.close(); };
   }, []);
 
   const startProgressStream = (presId: number) => {
+    currentPresIdRef.current = presId;
     eventSourceRef.current?.close();
     const es = new EventSource(`${API_BASE}/progress/${presId}`);
     eventSourceRef.current = es;
     es.onmessage = (event) => {
       try {
-        const data = JSON.parse(event.data);
+        const data: ProgressData = JSON.parse(event.data);
         setProgress(data);
         if (data.status === "complete") {
           es.close();
           setUploading(false);
-          setResult({ success: true, message: data.message || "Processing complete!", id: presId });
+          setCancelling(false);
+          currentPresIdRef.current = null;
+          setResult({
+            success: true,
+            message: data.message || "Processing complete!",
+            id: presId,
+            tokenUsage: data.token_usage,
+          });
           setProgress(null);
         } else if (data.status === "failed") {
           es.close();
           setUploading(false);
+          setCancelling(false);
+          currentPresIdRef.current = null;
           setResult({ success: false, message: data.message || "Processing failed" });
+          setProgress(null);
+        } else if (data.status === "cancelled") {
+          es.close();
+          setUploading(false);
+          setCancelling(false);
+          currentPresIdRef.current = null;
+          setResult({ success: false, message: "Generation was cancelled." });
           setProgress(null);
         }
       } catch { /* ignore parse errors */ }
     };
     es.onerror = () => { es.close(); };
   };
+
+  // ── Cancel generation ──
+  const cancelGeneration = useCallback(async () => {
+    if (!currentPresIdRef.current) return;
+    setCancelling(true);
+    try {
+      await api.post(`/admin/cancel/${currentPresIdRef.current}`);
+    } catch {
+      setCancelling(false);
+    }
+  }, []);
 
   // ── File Upload ──
   const uploadFile = useCallback(async (file: File) => {
@@ -77,23 +153,63 @@ export default function UploadPage() {
     e.target.value = "";
   }, [uploadFile]);
 
-  // ── URL Submit ──
-  const submitUrl = useCallback(async () => {
-    if (!websiteUrl.trim()) {
-      setResult({ success: false, message: "Please enter a website URL" });
-      return;
-    }
+  // ── URL Submit (with duplicate check) ──
+  const doSubmitUrl = useCallback(async (forceRegenerate: boolean) => {
+    setDuplicateInfo(null);
     setUploading(true);
     setResult(null);
     setProgress(null);
     try {
-      const res = await api.post("/admin/submit-url", { url: websiteUrl.trim(), max_pages: maxPages });
+      const res = await api.post("/admin/submit-url", {
+        url: websiteUrl.trim(),
+        max_pages: maxPages,
+        background_template: selectedTemplate,
+        force_regenerate: forceRegenerate,
+      });
+
+      if (res.data.status === "ready" && !forceRegenerate) {
+        setUploading(false);
+        setResult({
+          success: true,
+          message: "Using existing presentation (already generated for this URL).",
+          id: res.data.id,
+        });
+        return;
+      }
+
       startProgressStream(res.data.id);
     } catch (err: any) {
       setUploading(false);
       setResult({ success: false, message: err.response?.data?.detail || "Failed to submit URL" });
     }
-  }, [websiteUrl, maxPages]);
+  }, [websiteUrl, maxPages, selectedTemplate]);
+
+  const submitUrl = useCallback(async () => {
+    if (!websiteUrl.trim()) {
+      setResult({ success: false, message: "Please enter a website URL" });
+      return;
+    }
+
+    setCheckingUrl(true);
+    setResult(null);
+    setDuplicateInfo(null);
+    try {
+      const res = await api.post("/admin/check-url", { url: websiteUrl.trim() });
+      if (res.data.exists) {
+        setDuplicateInfo(res.data);
+        setCheckingUrl(false);
+        return;
+      }
+    } catch (err: any) {
+      if (err.response?.data?.detail) {
+        setCheckingUrl(false);
+        setResult({ success: false, message: err.response.data.detail });
+        return;
+      }
+    }
+    setCheckingUrl(false);
+    doSubmitUrl(false);
+  }, [websiteUrl, doSubmitUrl]);
 
   const pct = progress && progress.total_slides > 0
     ? Math.round((progress.current_slide / progress.total_slides) * 100)
@@ -104,10 +220,146 @@ export default function UploadPage() {
     setActiveTab(tab);
     setResult(null);
     setProgress(null);
+    setDuplicateInfo(null);
+  };
+
+  // ── Phase-specific display helpers ──
+  const getPhaseInfo = (phase?: string) => {
+    switch (phase) {
+      case "crawling":
+        return {
+          icon: <Search size={20} style={{ color: "#60a5fa" }} />,
+          label: "Crawling Website",
+          color: "#3b82f6",
+          bgColor: "rgba(59,130,246,0.1)",
+        };
+      case "crawl_done":
+        return {
+          icon: <CheckCircle2 size={20} style={{ color: "#10b981" }} />,
+          label: "Crawling Complete",
+          color: "#10b981",
+          bgColor: "rgba(16,185,129,0.1)",
+        };
+      case "generating":
+      case "webpage":
+        return {
+          icon: <Sparkles size={20} style={{ color: "#a78bfa" }} />,
+          label: "AI Generating Presentation",
+          color: "#8b5cf6",
+          bgColor: "rgba(139,92,246,0.1)",
+        };
+      default:
+        return {
+          icon: <Loader2 size={20} className="animate-spin" style={{ color: "#6366f1" }} />,
+          label: "Processing",
+          color: "#6366f1",
+          bgColor: "rgba(99,102,241,0.1)",
+        };
+    }
+  };
+
+  // ── Render progress section (shared between file & url tabs) ──
+  const renderProgress = () => {
+    if (!progress) {
+      return (
+        <div style={{ textAlign: "center" }}>
+          <p className="upload-title">
+            {activeTab === "url" ? "Validating website..." : "Uploading & Processing..."}
+          </p>
+          <p className="upload-subtitle">
+            {activeTab === "url" ? "Checking domain and preparing to crawl" : "Extracting all content from your presentation"}
+          </p>
+        </div>
+      );
+    }
+
+    const phaseInfo = getPhaseInfo(progress.phase);
+    const isGenerating = progress.phase === "generating" || progress.phase === "webpage";
+
+    return (
+      <div style={{ width: "100%", maxWidth: 420 }}>
+        {/* Phase indicator */}
+        <div style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 10,
+          marginBottom: 16,
+          padding: "10px 16px",
+          borderRadius: 10,
+          background: phaseInfo.bgColor,
+        }}>
+          {phaseInfo.icon}
+          <span style={{ fontWeight: 700, fontSize: 14, color: phaseInfo.color }}>
+            {phaseInfo.label}
+          </span>
+        </div>
+
+        {/* Progress bar */}
+        <div className="progress-bar-track" style={{ marginTop: 8 }}>
+          <div
+            className="progress-bar-fill"
+            style={{
+              width: isGenerating ? "100%" : `${pct}%`,
+              background: isGenerating
+                ? "linear-gradient(90deg, #6366f1, #8b5cf6, #a78bfa, #8b5cf6, #6366f1)"
+                : undefined,
+              backgroundSize: isGenerating ? "200% 100%" : undefined,
+              animation: isGenerating ? "shimmer 2s ease-in-out infinite" : undefined,
+            }}
+          />
+        </div>
+
+        {/* Step counter */}
+        {!isGenerating && (
+          <p className="progress-slide-text" style={{ textAlign: "center" }}>
+            Step <strong>{progress.current_slide}</strong> of <strong>{progress.total_slides}</strong>
+          </p>
+        )}
+
+        {/* Status message */}
+        <p style={{ fontSize: 12, color: "var(--c-text-muted)", marginTop: 8, textAlign: "center" }}>
+          {progress.message}
+        </p>
+
+        {/* Cancel button */}
+        <button
+          onClick={cancelGeneration}
+          disabled={cancelling}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 6,
+            margin: "16px auto 0",
+            padding: "8px 20px",
+            borderRadius: 8,
+            border: "1px solid rgba(239,68,68,0.3)",
+            background: cancelling ? "rgba(239,68,68,0.1)" : "transparent",
+            color: "#ef4444",
+            fontSize: 13,
+            fontWeight: 600,
+            cursor: cancelling ? "not-allowed" : "pointer",
+            transition: "all 0.2s ease",
+          }}
+        >
+          <XCircle size={14} />
+          {cancelling ? "Cancelling..." : "Cancel Generation"}
+        </button>
+      </div>
+    );
   };
 
   return (
     <div className="animate-fade-in">
+      {/* Shimmer animation for generating phase */}
+      <style>{`
+        @keyframes shimmer {
+          0% { background-position: 200% 0; }
+          100% { background-position: -200% 0; }
+        }
+      `}</style>
+
       <div className="page-header">
         <div>
           <h1>Create Presentation</h1>
@@ -196,23 +448,7 @@ export default function UploadPage() {
                 </div>
                 <div style={{ position: "absolute", inset: 0, borderRadius: 24 }} className="animate-pulse-glow" />
               </div>
-              {progress ? (
-                <div style={{ width: "100%", maxWidth: 360 }}>
-                  <p className="upload-title">Processing...</p>
-                  <div className="progress-bar-track" style={{ marginTop: 16 }}>
-                    <div className="progress-bar-fill" style={{ width: `${pct}%` }} />
-                  </div>
-                  <p className="progress-slide-text">
-                    Step <strong>{progress.current_slide}</strong> of <strong>{progress.total_slides}</strong>
-                  </p>
-                  <p style={{ fontSize: 12, color: "var(--c-text-muted)", marginTop: 4 }}>{progress.message}</p>
-                </div>
-              ) : (
-                <div>
-                  <p className="upload-title">Uploading & Processing...</p>
-                  <p className="upload-subtitle">Extracting all content from your presentation</p>
-                </div>
-              )}
+              {renderProgress()}
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 20 }}>
@@ -248,23 +484,7 @@ export default function UploadPage() {
                 </div>
                 <div style={{ position: "absolute", inset: 0, borderRadius: 24 }} className="animate-pulse-glow" />
               </div>
-              {progress ? (
-                <div style={{ width: "100%", maxWidth: 400 }}>
-                  <p className="upload-title" style={{ textAlign: "center" }}>Generating Presentation...</p>
-                  <div className="progress-bar-track" style={{ marginTop: 16 }}>
-                    <div className="progress-bar-fill" style={{ width: `${pct}%` }} />
-                  </div>
-                  <p className="progress-slide-text" style={{ textAlign: "center" }}>
-                    Step <strong>{progress.current_slide}</strong> of <strong>{progress.total_slides}</strong>
-                  </p>
-                  <p style={{ fontSize: 12, color: "var(--c-text-muted)", marginTop: 4, textAlign: "center" }}>{progress.message}</p>
-                </div>
-              ) : (
-                <div style={{ textAlign: "center" }}>
-                  <p className="upload-title">Starting website analysis...</p>
-                  <p className="upload-subtitle">Crawling pages and capturing screenshots</p>
-                </div>
-              )}
+              {renderProgress()}
             </div>
           ) : (
             <>
@@ -313,9 +533,12 @@ export default function UploadPage() {
                   <input
                     type="url"
                     value={websiteUrl}
-                    onChange={(e) => setWebsiteUrl(e.target.value)}
+                    onChange={(e) => {
+                      setWebsiteUrl(e.target.value);
+                      setDuplicateInfo(null);
+                    }}
                     placeholder="https://example.com"
-                    onKeyDown={(e) => { if (e.key === "Enter") submitUrl(); }}
+                    onKeyDown={(e) => { if (e.key === "Enter" && !checkingUrl) submitUrl(); }}
                     style={{
                       flex: 1,
                       padding: "12px 16px",
@@ -329,8 +552,87 @@ export default function UploadPage() {
                 </div>
               </div>
 
+              {/* Duplicate URL Dialog */}
+              {duplicateInfo && duplicateInfo.exists && (
+                <div style={{
+                  marginBottom: 20,
+                  padding: 20,
+                  borderRadius: 12,
+                  background: "linear-gradient(135deg, rgba(99,102,241,0.1), rgba(6,182,212,0.1))",
+                  border: "1px solid rgba(99,102,241,0.3)",
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+                    <AlertCircle size={20} style={{ color: "#818cf8" }} />
+                    <p style={{ fontWeight: 700, fontSize: 14, color: "var(--c-text)" }}>
+                      Presentation Already Exists
+                    </p>
+                  </div>
+                  <p style={{ fontSize: 13, color: "var(--c-text-muted)", marginBottom: 4 }}>
+                    A presentation for this URL has already been generated:
+                  </p>
+                  <p style={{ fontSize: 13, color: "var(--c-text)", fontWeight: 600, marginBottom: 16 }}>
+                    "{duplicateInfo.title}"
+                    {duplicateInfo.created_at && (
+                      <span style={{ fontWeight: 400, color: "var(--c-text-muted)", marginLeft: 8 }}>
+                        ({new Date(duplicateInfo.created_at).toLocaleDateString()})
+                      </span>
+                    )}
+                  </p>
+                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                    <button
+                      onClick={() => {
+                        setDuplicateInfo(null);
+                        setResult({
+                          success: true,
+                          message: "Using existing presentation.",
+                          id: duplicateInfo.presentation_id,
+                        });
+                      }}
+                      style={{
+                        padding: "10px 20px",
+                        borderRadius: 8,
+                        border: "none",
+                        background: "#10b981",
+                        color: "#fff",
+                        fontSize: 13,
+                        fontWeight: 600,
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                      }}
+                    >
+                      <Eye size={14} />
+                      Use Existing
+                    </button>
+                    <button
+                      onClick={() => {
+                        setDuplicateInfo(null);
+                        doSubmitUrl(true);
+                      }}
+                      style={{
+                        padding: "10px 20px",
+                        borderRadius: 8,
+                        border: "1px solid rgba(99,102,241,0.3)",
+                        background: "rgba(99,102,241,0.15)",
+                        color: "#818cf8",
+                        fontSize: 13,
+                        fontWeight: 600,
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                      }}
+                    >
+                      <RefreshCw size={14} />
+                      Regenerate
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Max Pages */}
-              <div style={{ marginBottom: 28 }}>
+              <div style={{ marginBottom: 20 }}>
                 <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "var(--c-text-muted)", marginBottom: 8 }}>
                   Pages to Crawl
                 </label>
@@ -367,32 +669,135 @@ export default function UploadPage() {
                 )}
               </div>
 
+              {/* Background Template Selector */}
+              <div style={{ marginBottom: 28 }}>
+                <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "var(--c-text-muted)", marginBottom: 8 }}>
+                  <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <Image size={14} />
+                    Background Template
+                  </span>
+                </label>
+                {loadingTemplates ? (
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 0" }}>
+                    <Loader2 size={16} className="animate-spin" style={{ color: "var(--c-text-muted)" }} />
+                    <span style={{ fontSize: 13, color: "var(--c-text-muted)" }}>Loading templates...</span>
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                    {/* Default (no template) */}
+                    <button
+                      onClick={() => setSelectedTemplate(null)}
+                      style={{
+                        width: 100,
+                        height: 64,
+                        borderRadius: 10,
+                        border: selectedTemplate === null ? "2px solid #6366f1" : "1px solid var(--c-border)",
+                        background: selectedTemplate === null
+                          ? "linear-gradient(135deg, rgba(99,102,241,0.2), rgba(6,182,212,0.2))"
+                          : "linear-gradient(135deg, #0f172a, #1e293b)",
+                        cursor: "pointer",
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: 4,
+                        transition: "all 0.2s ease",
+                        position: "relative",
+                        overflow: "hidden",
+                      }}
+                    >
+                      <span style={{
+                        fontSize: 11,
+                        fontWeight: 600,
+                        color: selectedTemplate === null ? "#818cf8" : "var(--c-text-muted)",
+                      }}>
+                        Default
+                      </span>
+                    </button>
+                    {templates.map((tpl) => (
+                      <button
+                        key={tpl.filename}
+                        onClick={() => setSelectedTemplate(tpl.filename)}
+                        title={tpl.name}
+                        style={{
+                          width: 100,
+                          height: 64,
+                          borderRadius: 10,
+                          border: selectedTemplate === tpl.filename ? "2px solid #6366f1" : "1px solid var(--c-border)",
+                          cursor: "pointer",
+                          padding: 0,
+                          overflow: "hidden",
+                          transition: "all 0.2s ease",
+                          position: "relative",
+                          background: "var(--c-bg)",
+                          opacity: selectedTemplate === tpl.filename ? 1 : 0.7,
+                        }}
+                      >
+                        <img
+                          src={`${API_BASE}${tpl.url}`}
+                          alt={tpl.name}
+                          style={{
+                            width: "100%",
+                            height: "100%",
+                            objectFit: "cover",
+                          }}
+                        />
+                        {selectedTemplate === tpl.filename && (
+                          <div style={{
+                            position: "absolute",
+                            inset: 0,
+                            background: "rgba(99,102,241,0.15)",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                          }}>
+                            <CheckCircle2 size={20} style={{ color: "#818cf8" }} />
+                          </div>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <p style={{ fontSize: 11, color: "var(--c-text-muted)", marginTop: 6 }}>
+                  Choose a background style for your presentation slides
+                </p>
+              </div>
+
               {/* Submit Button */}
               <button
                 onClick={submitUrl}
-                disabled={!websiteUrl.trim()}
+                disabled={!websiteUrl.trim() || checkingUrl}
                 style={{
                   width: "100%",
                   padding: "14px 24px",
                   borderRadius: 10,
                   border: "none",
-                  background: websiteUrl.trim()
+                  background: websiteUrl.trim() && !checkingUrl
                     ? "linear-gradient(135deg, #6366f1, #4f46e5)"
                     : "var(--c-bg)",
-                  color: websiteUrl.trim() ? "#fff" : "var(--c-text-muted)",
+                  color: websiteUrl.trim() && !checkingUrl ? "#fff" : "var(--c-text-muted)",
                   fontSize: 15,
                   fontWeight: 700,
-                  cursor: websiteUrl.trim() ? "pointer" : "not-allowed",
+                  cursor: websiteUrl.trim() && !checkingUrl ? "pointer" : "not-allowed",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
                   gap: 10,
                   transition: "all 0.2s ease",
-                  opacity: websiteUrl.trim() ? 1 : 0.5,
+                  opacity: websiteUrl.trim() && !checkingUrl ? 1 : 0.5,
                 }}
               >
-                <Zap size={18} />
-                Generate Presentation
+                {checkingUrl ? (
+                  <>
+                    <Loader2 size={18} className="animate-spin" />
+                    Checking URL...
+                  </>
+                ) : (
+                  <>
+                    <Zap size={18} />
+                    Generate Presentation
+                  </>
+                )}
               </button>
             </>
           )}
@@ -412,6 +817,28 @@ export default function UploadPage() {
             <p style={{ fontSize: 13, marginTop: 4, color: result.success ? "#047857" : "#b91c1c" }}>
               {result.message}
             </p>
+            {/* Token usage display */}
+            {result.success && result.tokenUsage && (
+              <div style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                marginTop: 8,
+                padding: "6px 12px",
+                borderRadius: 8,
+                background: "rgba(16,185,129,0.08)",
+                border: "1px solid rgba(16,185,129,0.2)",
+                width: "fit-content",
+              }}>
+                <Coins size={14} style={{ color: "#10b981" }} />
+                <span style={{ fontSize: 12, color: "#047857", fontWeight: 500 }}>
+                  {(result.tokenUsage.input_tokens + result.tokenUsage.output_tokens).toLocaleString()} tokens used
+                  <span style={{ color: "#6b7280", fontWeight: 400 }}>
+                    {" "}({result.tokenUsage.input_tokens.toLocaleString()} in + {result.tokenUsage.output_tokens.toLocaleString()} out)
+                  </span>
+                </span>
+              </div>
+            )}
           </div>
           {result.success && result.id && (
             <a

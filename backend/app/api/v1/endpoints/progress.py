@@ -16,7 +16,7 @@ async def stream_progress(presentation_id: int):
             if progress:
                 data = json.dumps(progress)
                 yield f"data: {data}\n\n"
-                if progress["status"] in ("complete", "failed"):
+                if progress["status"] in ("complete", "failed", "cancelled"):
                     break
             else:
                 yield f"data: {json.dumps({'status': 'waiting', 'message': 'Waiting for extraction to start...'})}\n\n"
