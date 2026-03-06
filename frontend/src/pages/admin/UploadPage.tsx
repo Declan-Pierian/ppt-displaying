@@ -734,7 +734,7 @@ export default function UploadPage() {
                         }}
                       >
                         <img
-                          src={`${API_BASE}${tpl.url}`}
+                          src={tpl.url}
                           alt={tpl.name}
                           style={{
                             width: "100%",

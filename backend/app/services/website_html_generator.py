@@ -118,17 +118,30 @@ def generate_website_webpage(
 - Use a semi-transparent dark overlay: linear-gradient(rgba(15,23,42,0.75), rgba(15,23,42,0.85))
 """
 
+        if template_brightness == "light":
+            overlay_css = "linear-gradient(rgba(255,255,255,0.15), rgba(255,255,255,0.15))"
+        else:
+            overlay_css = "linear-gradient(rgba(15,23,42,0.35), rgba(15,23,42,0.45))"
+
         bg_template_instruction = f"""
-## Background Template
-The user has selected a specific background template: "{bg_name}"
-I've included the template image below. You MUST use this image/style as the background for ALL slides.
-- Extract the color scheme, patterns, and design language from this template
-- Use the dominant colors as your slide backgrounds (via CSS gradients or solid colors that match)
-- The template sets the overall mood — maintain it consistently across every slide
-- Serve the background template image via: /api/v1/admin/background-templates/{bg_name}
-- You can use it as a CSS background-image on each slide, or recreate its visual style with CSS gradients
-- Preferred approach: use the image URL as background-image with overlay on each .slide:
-  background: url('/api/v1/admin/background-templates/{bg_name}') center/cover;
+## Background Template — MANDATORY
+The user has selected a specific background template image: "{bg_name}"
+**YOU MUST use this ACTUAL IMAGE as the CSS background-image on EVERY .slide element.**
+This is NOT optional. Do NOT recreate it with gradients. Do NOT use a solid color instead.
+
+**REQUIRED CSS for EVERY .slide:**
+```css
+.slide {{
+  background: {overlay_css}, url('/api/v1/admin/background-templates/{bg_name}') center/cover no-repeat !important;
+  background-size: cover !important;
+}}
+```
+
+- The image URL is: /api/v1/admin/background-templates/{bg_name}
+- Apply this to every single .slide element — no exceptions
+- Add a subtle semi-transparent overlay on top for text readability
+- The overlay should be thin enough that the background image is clearly visible through it
+- Do NOT use solid color backgrounds — the actual template image must be visible on every slide
 {contrast_instruction}
 """
 
@@ -297,6 +310,14 @@ to create a comprehensive presentation. Break each page into multiple slides.
         content_blocks.append({"type": "text", "text": page_info})
 
     # Final reminder
+    bg_reminder = ""
+    if background_template_path and os.path.exists(background_template_path):
+        bg_name = os.path.basename(background_template_path)
+        bg_reminder = (
+            f" BACKGROUND IMAGE IS MANDATORY: Every .slide MUST have "
+            f"background: url('/api/v1/admin/background-templates/{bg_name}') center/cover; "
+            f"— the actual image file, NOT a gradient or solid color."
+        )
     content_blocks.append({
         "type": "text",
         "text": (
@@ -305,6 +326,7 @@ to create a comprehensive presentation. Break each page into multiple slides.
             "pitch deck presentation. Screenshots should be LARGE and prominent "
             "(max-width 55%, not tiny thumbnails). Use two-column layouts for "
             "screenshot slides. Start output with <!DOCTYPE html>."
+            + bg_reminder
         ),
     })
 
