@@ -43,6 +43,7 @@ class WebsiteSubmitRequest(BaseModel):
     max_pages: int = 0  # 0 = crawl all discovered pages (up to safety cap)
     background_template: str | None = None  # e.g. "Pierian_Background_1.jpg"
     force_regenerate: bool = False  # If True, regenerate even if URL was already processed
+    crawl_mode: str = "full_site"  # "full_site" or "single_page"
 
 
 class URLCheckRequest(BaseModel):

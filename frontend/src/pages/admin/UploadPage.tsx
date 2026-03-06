@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import {
   Upload, CheckCircle2, AlertCircle, Loader2, CloudUpload, FileType,
   Zap, Eye, Globe, Link, Image, RefreshCw, XCircle, Search, Sparkles, Coins,
+  FileText, Layers,
 } from "lucide-react";
 import api, { API_BASE } from "../../lib/api";
 
@@ -52,6 +53,11 @@ export default function UploadPage() {
 
   // Cancel state
   const [cancelling, setCancelling] = useState(false);
+
+  // Crawl mode dialog state
+  const [showCrawlModeDialog, setShowCrawlModeDialog] = useState(false);
+  const [detectedRoute, setDetectedRoute] = useState<string | null>(null);
+  const [pendingForceRegenerate, setPendingForceRegenerate] = useState(false);
 
   // Load background templates when URL tab is active
   useEffect(() => {
@@ -153,18 +159,48 @@ export default function UploadPage() {
     e.target.value = "";
   }, [uploadFile]);
 
+  // ── Route detection: is this a specific page or a homepage? ──
+  const isSpecificRoute = useCallback((url: string): { isRoute: boolean; path: string } => {
+    try {
+      let normalized = url.trim();
+      if (!normalized.startsWith("http://") && !normalized.startsWith("https://")) {
+        normalized = "https://" + normalized;
+      }
+      const parsed = new URL(normalized);
+      const path = parsed.pathname.replace(/\/+$/, ""); // strip trailing slashes
+      // A homepage has no path or just "/"
+      // A specific route has a meaningful path like /about, /products/widget
+      if (!path || path === "") {
+        return { isRoute: false, path: "/" };
+      }
+      // Ignore paths that are just common index patterns
+      const indexPatterns = ["/index", "/index.html", "/index.htm", "/home", "/default"];
+      if (indexPatterns.includes(path.toLowerCase())) {
+        return { isRoute: false, path };
+      }
+      return { isRoute: true, path };
+    } catch {
+      return { isRoute: false, path: "/" };
+    }
+  }, []);
+
   // ── URL Submit (with duplicate check) ──
-  const doSubmitUrl = useCallback(async (forceRegenerate: boolean) => {
+  const doSubmitUrl = useCallback(async (forceRegenerate: boolean, crawlMode: string = "full_site") => {
     setDuplicateInfo(null);
+    setShowCrawlModeDialog(false);
     setUploading(true);
     setResult(null);
     setProgress(null);
+    // CRITICAL: when single_page mode, force max_pages to 1 so backend
+    // only crawls the target page, regardless of the Pages-to-Crawl selector.
+    const effectiveMaxPages = crawlMode === "single_page" ? 1 : maxPages;
     try {
       const res = await api.post("/admin/submit-url", {
         url: websiteUrl.trim(),
-        max_pages: maxPages,
+        max_pages: effectiveMaxPages,
         background_template: selectedTemplate,
         force_regenerate: forceRegenerate,
+        crawl_mode: crawlMode,
       });
 
       if (res.data.status === "ready" && !forceRegenerate) {
@@ -193,6 +229,7 @@ export default function UploadPage() {
     setCheckingUrl(true);
     setResult(null);
     setDuplicateInfo(null);
+    setShowCrawlModeDialog(false);
     try {
       const res = await api.post("/admin/check-url", { url: websiteUrl.trim() });
       if (res.data.exists) {
@@ -208,8 +245,18 @@ export default function UploadPage() {
       }
     }
     setCheckingUrl(false);
-    doSubmitUrl(false);
-  }, [websiteUrl, doSubmitUrl]);
+
+    // Check if this is a specific route — ask the user what they want
+    const routeCheck = isSpecificRoute(websiteUrl);
+    if (routeCheck.isRoute) {
+      setDetectedRoute(routeCheck.path);
+      setShowCrawlModeDialog(true);
+      return;
+    }
+
+    // Homepage — crawl full site by default
+    doSubmitUrl(false, "full_site");
+  }, [websiteUrl, doSubmitUrl, isSpecificRoute]);
 
   const pct = progress && progress.total_slides > 0
     ? Math.round((progress.current_slide / progress.total_slides) * 100)
@@ -221,6 +268,9 @@ export default function UploadPage() {
     setResult(null);
     setProgress(null);
     setDuplicateInfo(null);
+    setShowCrawlModeDialog(false);
+    setDetectedRoute(null);
+    setPendingForceRegenerate(false);
   };
 
   // ── Phase-specific display helpers ──
@@ -608,7 +658,15 @@ export default function UploadPage() {
                     <button
                       onClick={() => {
                         setDuplicateInfo(null);
-                        doSubmitUrl(true);
+                        // Check if this is a specific route — if so, ask crawl mode first
+                        const routeCheck = isSpecificRoute(websiteUrl);
+                        if (routeCheck.isRoute) {
+                          setPendingForceRegenerate(true);
+                          setDetectedRoute(routeCheck.path);
+                          setShowCrawlModeDialog(true);
+                        } else {
+                          doSubmitUrl(true, "full_site");
+                        }
                       }}
                       style={{
                         padding: "10px 20px",
@@ -631,7 +689,85 @@ export default function UploadPage() {
                 </div>
               )}
 
-              {/* Max Pages */}
+              {/* Crawl Mode Dialog — shown when specific route detected */}
+              {showCrawlModeDialog && detectedRoute && (
+                <div style={{
+                  marginBottom: 20,
+                  padding: 20,
+                  borderRadius: 12,
+                  background: "linear-gradient(135deg, rgba(168,85,247,0.1), rgba(59,130,246,0.1))",
+                  border: "1px solid rgba(168,85,247,0.3)",
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+                    <AlertCircle size={20} style={{ color: "#a78bfa" }} />
+                    <p style={{ fontWeight: 700, fontSize: 14, color: "var(--c-text)" }}>
+                      Specific Page Detected
+                    </p>
+                  </div>
+                  <p style={{ fontSize: 13, color: "var(--c-text-muted)", marginBottom: 4 }}>
+                    You've entered a URL with a specific route:
+                  </p>
+                  <p style={{
+                    fontSize: 13,
+                    color: "var(--c-text)",
+                    fontWeight: 600,
+                    marginBottom: 6,
+                    padding: "6px 10px",
+                    background: "rgba(255,255,255,0.05)",
+                    borderRadius: 6,
+                    fontFamily: "monospace",
+                    wordBreak: "break-all",
+                  }}>
+                    {websiteUrl.trim()}
+                  </p>
+                  <p style={{ fontSize: 13, color: "var(--c-text-muted)", marginBottom: 16 }}>
+                    Would you like to create a presentation from <strong>this page only</strong>, or crawl <strong>all pages</strong> of the entire website?
+                  </p>
+                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                    <button
+                      onClick={() => { doSubmitUrl(pendingForceRegenerate, "single_page"); setPendingForceRegenerate(false); }}
+                      style={{
+                        padding: "10px 20px",
+                        borderRadius: 8,
+                        border: "none",
+                        background: "linear-gradient(135deg, #8b5cf6, #7c3aed)",
+                        color: "#fff",
+                        fontSize: 13,
+                        fontWeight: 600,
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                      }}
+                    >
+                      <FileText size={14} />
+                      This Page Only
+                    </button>
+                    <button
+                      onClick={() => { doSubmitUrl(pendingForceRegenerate, "full_site"); setPendingForceRegenerate(false); }}
+                      style={{
+                        padding: "10px 20px",
+                        borderRadius: 8,
+                        border: "1px solid rgba(59,130,246,0.3)",
+                        background: "rgba(59,130,246,0.15)",
+                        color: "#60a5fa",
+                        fontSize: 13,
+                        fontWeight: 600,
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                      }}
+                    >
+                      <Layers size={14} />
+                      Entire Website
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Max Pages — only show when crawl mode dialog is NOT active (i.e. homepage URLs) */}
+              {!showCrawlModeDialog && (
               <div style={{ marginBottom: 20 }}>
                 <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "var(--c-text-muted)", marginBottom: 8 }}>
                   Pages to Crawl
@@ -668,6 +804,7 @@ export default function UploadPage() {
                   </p>
                 )}
               </div>
+              )}
 
               {/* Background Template Selector */}
               <div style={{ marginBottom: 28 }}>
@@ -763,7 +900,8 @@ export default function UploadPage() {
                 </p>
               </div>
 
-              {/* Submit Button */}
+              {/* Submit Button — hidden when crawl mode dialog is active (user should pick from dialog) */}
+              {!showCrawlModeDialog && (
               <button
                 onClick={submitUrl}
                 disabled={!websiteUrl.trim() || checkingUrl}
@@ -799,6 +937,7 @@ export default function UploadPage() {
                   </>
                 )}
               </button>
+              )}
             </>
           )}
         </div>

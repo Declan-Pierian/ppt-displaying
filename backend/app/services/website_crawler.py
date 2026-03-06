@@ -334,13 +334,85 @@ def _discover_links_aggressive(page, base_url: str, visited: set, known: set) ->
     return new_links
 
 
+def _crawl_one_page(url: str, presentation_id: int, media_dir: str) -> dict:
+    """Capture exactly ONE page — no discovery, no loops, no other pages.
+
+    This is a completely separate code path from the multi-page crawler.
+    It opens the browser, visits the single URL, screenshots it, extracts
+    content, closes the browser, and returns.
+    """
+    from playwright.sync_api import sync_playwright
+
+    print(f"INFO:=== SINGLE PAGE MODE === Capturing ONLY: {url}", file=sys.stderr, flush=True)
+
+    screenshots_dir = os.path.join(media_dir, "screenshots")
+    os.makedirs(screenshots_dir, exist_ok=True)
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        context = browser.new_context(
+            viewport={"width": 1920, "height": 1080},
+            user_agent=(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/120.0.0.0 Safari/537.36"
+            ),
+        )
+        page = context.new_page()
+
+        page.goto(url, wait_until="networkidle", timeout=30000)
+        page.wait_for_timeout(2000)
+
+        # Screenshot
+        screenshot_path = os.path.join(screenshots_dir, "page_1.png")
+        page.screenshot(path=screenshot_path, full_page=False)
+
+        # Extract content
+        html = page.content()
+        content = _extract_page_content(html)
+        page_title = page.title() or content.get("title", "")
+
+        print(f"PROGRESS:1:1:Captured single page: {url[:70]}", file=sys.stderr, flush=True)
+
+        browser.close()
+
+    print(f"INFO:Single-page crawl complete. 1 page captured.", file=sys.stderr, flush=True)
+
+    return {
+        "presentation_id": presentation_id,
+        "title": page_title or urlparse(url).netloc,
+        "source_url": url,
+        "slide_width_emu": 12192000,
+        "slide_height_emu": 6858000,
+        "total_pages_crawled": 1,
+        "slides": [{
+            "slide_index": 0,
+            "slide_number": 1,
+            "page_url": url,
+            "page_title": page_title,
+            "screenshot_path": "media/screenshots/page_1.png",
+            "content": content,
+            "background": {"type": "none"},
+            "shapes": [],
+            "notes": None,
+        }],
+    }
+
+
 def _crawl_impl(
     url: str,
     presentation_id: int,
     media_dir: str,
     max_pages: int = 0,
+    single_page: bool = False,
 ) -> dict:
     """Core crawl logic — must run in its own process on Windows."""
+
+    # ── SINGLE PAGE: use the dedicated simple function ──
+    if single_page or max_pages == 1:
+        return _crawl_one_page(url, presentation_id, media_dir)
+
+    # ── MULTI-PAGE: full discovery + BFS crawl ──
     from playwright.sync_api import sync_playwright
 
     HARD_CAP = 50
@@ -349,6 +421,12 @@ def _crawl_impl(
 
     base_url = url.rstrip("/")
     effective_limit = max_pages if max_pages > 0 else HARD_CAP
+
+    print(
+        f"INFO:_crawl_impl FULL-SITE mode: max_pages={max_pages}, "
+        f"effective_limit={effective_limit}, url={url}",
+        file=sys.stderr, flush=True,
+    )
 
     visited = set()
     known = set()
@@ -368,8 +446,8 @@ def _crawl_impl(
         )
         page = context.new_page()
 
-        # ── Phase 0: Discovery — sitemap, robots.txt, common paths ──
-        print("INFO:Phase 0 — URL discovery via sitemap, robots.txt, common paths...", file=sys.stderr, flush=True)
+        # ── Phase 0: Discovery — sitemap, robots.txt ──
+        print("INFO:Phase 0 — URL discovery via sitemap, robots.txt...", file=sys.stderr, flush=True)
 
         # Try robots.txt for sitemap references
         robots_sitemaps = _try_fetch_robots_sitemaps(page, base_url)
@@ -414,7 +492,7 @@ def _crawl_impl(
                 page.goto(page_url, wait_until="networkidle", timeout=30000)
                 page.wait_for_timeout(2000)  # Let JS fully render
 
-                # Discover more links (aggressive: scroll + multiple methods)
+                # Discover more links from this page
                 new_links = _discover_links_aggressive(page, base_url, visited, known)
                 urls_to_visit.extend(new_links)
 
@@ -527,19 +605,26 @@ def crawl_website(
     media_dir: str,
     max_pages: int = 0,
     progress_callback=None,
+    single_page: bool = False,
 ) -> dict:
     """Crawl a website by launching Playwright in a SEPARATE PROCESS."""
+    logger.info(
+        "crawl_website called: single_page=%s, max_pages=%d, url=%s",
+        single_page, max_pages, url,
+    )
     config = {
         "url": url,
         "presentation_id": presentation_id,
         "media_dir": media_dir,
         "max_pages": max_pages,
+        "single_page": single_page,
     }
     config_path = os.path.join(media_dir, "_crawl_config.json")
     result_path = os.path.join(media_dir, "_crawl_result.json")
 
     with open(config_path, "w", encoding="utf-8") as f:
         json.dump(config, f)
+    logger.info("Crawl config written: %s", json.dumps(config))
 
     backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -597,11 +682,24 @@ if __name__ == "__main__":
     with open(config_path, "r", encoding="utf-8") as f:
         config = json.load(f)
 
+    sp = config.get("single_page", False)
+    mp = config.get("max_pages", 0)
+    print(
+        f"INFO:Subprocess starting: single_page={sp}, max_pages={mp}, url={config['url']}",
+        file=sys.stderr, flush=True,
+    )
+
+    # DEFENSIVE: if single_page is True, force max_pages to 1
+    if sp:
+        mp = 1
+        print("INFO:Single-page mode forced max_pages=1", file=sys.stderr, flush=True)
+
     result = _crawl_impl(
         url=config["url"],
         presentation_id=config["presentation_id"],
         media_dir=config["media_dir"],
-        max_pages=config.get("max_pages", 0),
+        max_pages=mp,
+        single_page=sp,
     )
 
     with open(result_path, "w", encoding="utf-8") as f:

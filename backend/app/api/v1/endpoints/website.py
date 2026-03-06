@@ -131,16 +131,28 @@ def _check_website_legitimacy(url: str) -> tuple[bool, str]:
 def process_website(
     presentation_id: int, url: str, media_dir: str, pres_dir: str,
     max_pages: int, background_template: str | None = None,
+    crawl_mode: str = "full_site",
 ):
     """Background task: crawl website, generate slides.json, generate HTML webpage."""
     from app.services.website_crawler import crawl_website
     from app.services.website_html_generator import generate_website_webpage
 
+    is_single = (crawl_mode == "single_page")
+    logger.info(
+        "process_website: id=%d, crawl_mode=%s, is_single=%s, max_pages=%d, url=%s",
+        presentation_id, crawl_mode, is_single, max_pages, url,
+    )
+
+    # DEFENSIVE: force max_pages=1 in single_page mode so the crawler
+    # cannot crawl more than 1 page even if max_pages was set differently.
+    if is_single:
+        max_pages = 1
+
     db = SessionLocal()
     start_time = time.time()
 
     try:
-        estimated_pages = max_pages if max_pages > 0 else 20
+        estimated_pages = 1 if is_single else (max_pages if max_pages > 0 else 20)
         init_progress(presentation_id, estimated_pages + 2)
 
         def on_crawl_progress(current, total, message):
@@ -156,13 +168,15 @@ def process_website(
             raise RuntimeError("Cancelled by user")
 
         # Phase 1: Crawl website
-        update_progress(presentation_id, current_slide=0, phase="crawling", message="Starting website crawl...")
+        crawl_msg = "Capturing this single page..." if is_single else "Starting website crawl..."
+        update_progress(presentation_id, current_slide=0, phase="crawling", message=crawl_msg)
         result = crawl_website(
             url=url,
             presentation_id=presentation_id,
             media_dir=media_dir,
             max_pages=max_pages,
             progress_callback=on_crawl_progress,
+            single_page=is_single,
         )
 
         # Check cancellation after crawl
@@ -424,6 +438,11 @@ async def submit_website_url(
     db.commit()
     db.refresh(presentation)
 
+    logger.info(
+        "Submitting website job: presentation_id=%d, url=%s, crawl_mode=%s, max_pages=%d",
+        presentation.id, url, body.crawl_mode, max_pages,
+    )
+
     background_tasks.add_task(
         process_website,
         presentation.id,
@@ -432,6 +451,7 @@ async def submit_website_url(
         pres_dir,
         max_pages,
         body.background_template,
+        body.crawl_mode,
     )
 
     return presentation

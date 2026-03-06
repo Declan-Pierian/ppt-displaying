@@ -184,20 +184,22 @@ Use this exact design language:
 - Padding: 60px top/bottom, 100px left/right (for nav zones)
 {bg_template_instruction}
 
-## Screenshots — IMPORTANT SIZING
+## Screenshots — STRICT SIZING (images must NEVER exceed boundaries)
 Use these EXACT URLs for page screenshots in <img> tags:
 {json.dumps(screenshot_url_map, indent=2)}
 
 **Screenshot display rules:**
 - Display screenshots as elegant framed previews inside cards
 - Use: border-radius: 12px; box-shadow: 0 20px 60px rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.1)
-- **SIZE: max-width: 55%; max-height: 65vh; width: auto; height: auto; object-fit: contain**
-- For slides that feature a screenshot prominently, use a TWO-COLUMN layout:
-  - Left column (50-55%): text content (heading, bullets, description)
-  - Right column (45-50%): the screenshot image, vertically centered
-- For the title slide, the screenshot can be larger (up to 60% width) as a hero image
-- NEVER make screenshots smaller than 40% of the slide width
-- Screenshots should be the visual centerpiece alongside the text, NOT tiny thumbnails
+- **SIZE: max-width: 38%; max-height: 36vh; width: auto; height: auto; object-fit: contain**
+- For slides that feature a screenshot, use a TWO-COLUMN flex row layout:
+  - Container: display:flex; align-items:center; gap:40px; max-height:65vh; overflow:hidden;
+  - Left column: flex:1 1 55%; max-width:55%; — text content (heading, bullets)
+  - Right column: flex:0 0 38%; max-width:38%; text-align:center; display:flex; align-items:center; justify-content:center;
+  - Image inside right column: max-width:90%; max-height:36vh; object-fit:contain; display:block; margin:0 auto;
+- **CRITICAL: The image column MUST NOT exceed 40% of the slide width. The image must be CENTERED within its column, with visible space on all sides. It must NEVER touch or extend past the right edge of the slide.**
+- Screenshots are supplementary — they should fit alongside text, not dominate the slide
+- When in doubt, make the screenshot SMALLER. A small, well-centered screenshot is far better than a large one that overflows.
 
 ## Navigation & Controls
 - Full-height side zones (80px wide, class="nav-zone") for prev/next with gradient + arrow on hover
@@ -212,16 +214,19 @@ Use these EXACT URLs for page screenshots in <img> tags:
 ## CRITICAL LAYOUT RULES — Content MUST Fit Screen (NO EXCEPTIONS)
 - EVERY slide MUST fit within 100vw x 100vh. NO scrolling, NO overflow. ZERO tolerance.
 - **MAX 3 CARDS/ITEMS per slide in any grid or flex layout.** If you have 4+ items, SPLIT them across 2+ slides.
-  - Example: 6 features = 2 slides of 3 cards each, NOT 1 slide of 6 cards
-  - Example: 8 categories = 3 slides (3+3+2), NOT 1 slide of 8
-- Keep content concise: max 3-4 bullet points per slide, short sentences (max 15 words each)
-- Use font-size clamp: h1 clamp(1.5rem,4vw,3rem), h2 clamp(1.2rem,3vw,2.2rem), p clamp(0.75rem,1.3vw,1rem)
+- Keep content concise: max 3 bullet points per slide, short sentences (max 12 words each)
+- Use font-size clamp: h1 clamp(1.3rem,3.2vw,2.5rem), h2 clamp(1rem,2.5vw,1.8rem), p clamp(0.7rem,1.2vw,0.95rem)
 - .zoom-wrapper padding: 50px 90px (leaves room for nav zones + logo)
-- If a slide has both text and a screenshot, use a flex row layout and constrain the image to max 45% width
-- Card heights: max-height 30vh per card. Grid gaps: 20px max.
-- NEVER let content exceed the viewport — it's better to have MORE slides with LESS content than to overflow
-- When in doubt, SPLIT content across multiple slides. More slides = better than overflowing slides.
-- Test mentally: if a slide has more than ~60% of the vertical space filled with cards, it will overflow. Split it.
+- **TWO-COLUMN SLIDES (text + screenshot):** use display:flex; align-items:center; gap:40px; max-height:65vh; overflow:hidden;
+  - Text column: flex:1 1 55%; max-width:55%; max 3-4 short bullet points
+  - Image column: flex:0 0 38%; max-width:38%; text-align:center; display:flex; align-items:center; justify-content:center;
+  - Image inside column: max-width:90%; max-height:36vh; object-fit:contain; display:block; margin:0 auto;
+  - The image must be CENTERED in its column with visible padding on all sides — it must NEVER touch the right edge of the slide
+- Card heights: max-height 25vh per card. Grid gaps: 16px max. overflow:hidden on every card.
+- **EVERY card/box MUST have overflow:hidden** in its inline style
+- CTA/final slides: keep it to heading + 2-3 short lines + 1 button. Do NOT put long URLs in visible text.
+- NEVER let content exceed the viewport — MORE slides with LESS content is always better than overflowing
+- Test mentally: if total content height exceeds ~75vh (leaving 25vh for padding/heading), SPLIT into 2 slides.
 
 ## Company Logo
 <img src="/api/v1/pierian-logo" alt="Pierian" class="company-logo" style="position:fixed;top:16px;right:20px;z-index:95;height:52px;width:auto;object-fit:contain;pointer-events:none;border-radius:6px;" />
@@ -337,14 +342,18 @@ to create a comprehensive presentation. Break each page into multiple slides.
         "text": (
             "\n\nREMINDER: Create at LEAST 10-15 slides from this content. "
             "Each section/feature = its own slide. Make it look like a premium "
-            "pitch deck presentation. Screenshots should be LARGE and prominent "
-            "(max-width 55%, not tiny thumbnails). Use two-column layouts for "
-            "screenshot slides. Start output with <!DOCTYPE html>.\n\n"
-            "**ABSOLUTE RULE: MAX 3 CARDS PER SLIDE.** If you have 4+ items/cards/features "
-            "to show, you MUST split them across multiple slides (e.g., 6 features = "
-            "Slide A with 3 cards + Slide B with 3 cards). This is NON-NEGOTIABLE. "
-            "Content that overflows beyond the viewport is a CRITICAL BUG. "
-            "Every single card/item must be fully visible without scrolling."
+            "pitch deck presentation. Use two-column flex layouts for "
+            "screenshot slides (text left, image right). Start output with <!DOCTYPE html>.\n\n"
+            "**ABSOLUTE RULES — VIOLATIONS = CRITICAL BUGS:**\n"
+            "1. MAX 3 CARDS PER SLIDE. 4+ items = split across multiple slides.\n"
+            "2. Screenshot images: max-width:38%; max-height:36vh; object-fit:contain. "
+            "The image column must be max-width:38%. Image must be CENTERED in its column.\n"
+            "3. Every card/box MUST have overflow:hidden in its style.\n"
+            "4. All text inside cards must fit — keep card content to heading + 2 short lines max.\n"
+            "5. CTA/final slide: heading + 2 lines + button. No long URLs in visible text.\n"
+            "6. Content overflowing beyond the viewport is a CRITICAL BUG.\n"
+            "7. TWO-COLUMN: text column 55%, image column 38%, gap 40px. "
+            "Image NEVER touches right edge of slide — keep 5%+ right padding."
             + bg_reminder
         ),
     })
@@ -454,7 +463,7 @@ to create a comprehensive presentation. Break each page into multiple slides.
         '{color:inherit !important;}\n'
         '.gradient-text{-webkit-text-fill-color:transparent !important;'
         'background-clip:text !important;}\n'
-        '/* Strict slide containment — no overflow allowed */\n'
+        '/* === STRICT SLIDE CONTAINMENT — ZERO OVERFLOW === */\n'
         '.slide,.slide-container,[class*="slide"]:not(.slide-counter):not(.slide-nav){\n'
         '  overflow:hidden !important;\n'
         '  max-height:100vh !important;\n'
@@ -465,52 +474,93 @@ to create a comprehensive presentation. Break each page into multiple slides.
         '}\n'
         '.slide *{box-sizing:border-box !important;}\n'
         '/* Zoom wrapper / content wrapper must stay within slide */\n'
-        '.zoom-wrapper,.slide-content,.slide>[class*="content"],.slide>[class*="wrapper"]{\n'
+        '.zoom-wrapper,.slide-content,.slide>[class*="content"],.slide>[class*="wrapper"],.slide>div{\n'
         '  max-height:100vh !important;\n'
         '  overflow:hidden !important;\n'
         '  box-sizing:border-box !important;\n'
+        '}\n'
+        '.zoom-wrapper,.slide-content,.slide>[class*="content"],.slide>[class*="wrapper"]{\n'
         '  padding:50px 90px !important;\n'
         '}\n'
-        '/* Headings: clamp sizes to prevent overflow */\n'
-        '.slide h1{font-size:clamp(1.4rem,3.5vw,2.8rem) !important;line-height:1.15 !important;margin-bottom:0.4em !important;}\n'
-        '.slide h2{font-size:clamp(1.1rem,2.8vw,2rem) !important;line-height:1.2 !important;margin-bottom:0.3em !important;}\n'
-        '.slide h3{font-size:clamp(0.95rem,2.2vw,1.4rem) !important;line-height:1.25 !important;margin-bottom:0.2em !important;}\n'
-        '.slide p,.slide li{font-size:clamp(0.75rem,1.3vw,1rem) !important;line-height:1.35 !important;margin-bottom:0.3em !important;}\n'
+        '/* Headings: clamp sizes aggressively */\n'
+        '.slide h1{font-size:clamp(1.3rem,3.2vw,2.5rem) !important;line-height:1.1 !important;margin-bottom:0.3em !important;}\n'
+        '.slide h2{font-size:clamp(1rem,2.5vw,1.8rem) !important;line-height:1.15 !important;margin-bottom:0.25em !important;}\n'
+        '.slide h3{font-size:clamp(0.9rem,2vw,1.3rem) !important;line-height:1.2 !important;margin-bottom:0.2em !important;}\n'
+        '.slide p,.slide li{font-size:clamp(0.7rem,1.2vw,0.95rem) !important;line-height:1.3 !important;margin-bottom:0.25em !important;}\n'
         '/* Prevent any element from exceeding viewport */\n'
         '.slide>*,.zoom-wrapper>*{max-width:100% !important;}\n'
-        '/* Card/grid containment — max 3 visible items per row, limit heights */\n'
+        '/* Card/grid containment — strict height limits */\n'
         '.slide [style*="display:grid"],.slide [style*="display: grid"]{\n'
-        '  grid-template-columns:repeat(auto-fit,minmax(200px,1fr)) !important;\n'
-        '  max-height:65vh !important;\n'
+        '  grid-template-columns:repeat(auto-fit,minmax(180px,1fr)) !important;\n'
+        '  max-height:60vh !important;\n'
         '  overflow:hidden !important;\n'
-        '  gap:16px !important;\n'
+        '  gap:14px !important;\n'
         '}\n'
         '.slide [style*="display:flex"],.slide [style*="display: flex"]{\n'
-        '  flex-wrap:wrap !important;\n'
-        '  max-height:70vh !important;\n'
+        '  flex-wrap:nowrap !important;\n'
+        '  max-height:65vh !important;\n'
         '  overflow:hidden !important;\n'
+        '  max-width:100% !important;\n'
+        '  align-items:center !important;\n'
         '}\n'
-        '/* Individual cards must not exceed a fraction of viewport height */\n'
+        '/* Individual cards — strict height limit + clip content */\n'
         '.slide [class*="card"],.slide [class*="Card"],.slide [class*="feature"],.slide [class*="Feature"],'
-        '.slide [class*="item"],.slide [class*="Item"],.slide [class*="box"],.slide [class*="Box"]{\n'
-        '  max-height:28vh !important;\n'
+        '.slide [class*="item"],.slide [class*="Item"],.slide [class*="box"],.slide [class*="Box"],'
+        '.slide [class*="service"],.slide [class*="Service"],.slide [class*="benefit"],.slide [class*="Benefit"],'
+        '.slide [class*="cta"],.slide [class*="CTA"],.slide [class*="action"],.slide [class*="Action"]{\n'
+        '  max-height:25vh !important;\n'
         '  overflow:hidden !important;\n'
+        '  padding:clamp(10px,1.5vh,20px) clamp(12px,1.5vw,24px) !important;\n'
         '}\n'
+        '/* Nth-child safety: hide 4th+ cards in grid containers */\n'
+        '.slide [style*="display:grid"]>*:nth-child(n+4),'
+        '.slide [style*="display: grid"]>*:nth-child(n+4){\n'
+        '  display:none !important;\n'
+        '}\n'
+        '/* ── IMAGE CONTAINMENT — screenshots must NEVER exceed slide ── */\n'
         '.slide img:not(.company-logo):not([class*="icon"]):not([class*="logo"]):not([width="1"]){\n'
-        '  max-width:50vw !important;\n'
-        '  max-height:50vh !important;\n'
+        '  max-width:38vw !important;\n'
+        '  max-height:36vh !important;\n'
         '  width:auto !important;\n'
         '  height:auto !important;\n'
         '  object-fit:contain !important;\n'
         '  border-radius:12px;\n'
         '}\n'
+        '/* ── Two-column layouts: STRICT width constraints on both columns ── */\n'
+        '.slide [style*="display:flex"]>*,.slide [style*="display: flex"]>*{\n'
+        '  overflow:hidden !important;\n'
+        '  min-width:0 !important;\n'
+        '  max-width:55% !important;\n'
+        '  flex-shrink:1 !important;\n'
+        '}\n'
+        '/* Image column (typically the 2nd child): cap at 42% so it stays well within the slide */\n'
+        '.slide [style*="display:flex"]>*:last-child,.slide [style*="display: flex"]>*:last-child{\n'
+        '  max-width:42% !important;\n'
+        '  display:flex !important;\n'
+        '  align-items:center !important;\n'
+        '  justify-content:center !important;\n'
+        '}\n'
+        '/* Images inside flex layouts: constrain relative to their parent AND viewport */\n'
+        '.slide [style*="display:flex"] img,.slide [style*="display: flex"] img{\n'
+        '  max-height:36vh !important;\n'
+        '  max-width:90% !important;\n'
+        '  width:auto !important;\n'
+        '  height:auto !important;\n'
+        '  object-fit:contain !important;\n'
+        '  display:block !important;\n'
+        '  margin:0 auto !important;\n'
+        '}\n'
         '.company-logo{height:52px !important;width:auto !important;'
         'position:fixed !important;}\n'
-        '/* Bullet lists: limit visible items */\n'
-        '.slide ul,.slide ol{max-height:55vh !important;overflow:hidden !important;}\n'
+        '/* Bullet lists: strict limit */\n'
+        '.slide ul,.slide ol{max-height:45vh !important;overflow:hidden !important;}\n'
+        '.slide ul>li:nth-child(n+5),.slide ol>li:nth-child(n+5){display:none !important;}\n'
+        '/* Tables: constrain */\n'
+        '.slide table{max-height:50vh !important;overflow:hidden !important;font-size:clamp(0.65rem,1vw,0.85rem) !important;}\n'
         '/* Nav arrow zones — togglable via eye icon */\n'
-        '.nav-zone{transition:opacity 0.3s ease !important;}\n'
-        '.nav-zones-hidden .nav-zone{opacity:0 !important;pointer-events:none !important;}\n'
+        '.nav-zone{transition:opacity 0.3s ease !important;opacity:1 !important;}\n'
+        '.nav-zones-hidden .nav-zone{opacity:0 !important;}\n'
+        '.nav-zones-hidden .nav-zone:hover{opacity:1 !important;pointer-events:auto !important;}\n'
         '</style>\n'
     )
 
@@ -519,14 +569,12 @@ to create a comprehensive presentation. Break each page into multiple slides.
 /* ── Auto-fit: scale down slide content if it overflows ── */
 function autoFitSlides(){
   document.querySelectorAll('.slide').forEach(function(slide){
-    /* Find the content wrapper inside the slide.
-       Could be .zoom-wrapper, or any direct child div that holds content */
+    /* Find the content wrapper inside the slide */
     var w = slide.querySelector('.zoom-wrapper')
          || slide.querySelector('.slide-content')
          || slide.querySelector('[class*="content"]')
          || slide.querySelector('[class*="wrapper"]');
-    /* Fallback: if no wrapper found, use the first direct child div that
-       isn't a nav zone or logo */
+    /* Fallback: first direct child div that isn't a nav zone */
     if(!w){
       var children = slide.children;
       for(var i=0;i<children.length;i++){
@@ -542,7 +590,7 @@ function autoFitSlides(){
 
     // Reset previous transforms
     w.style.transform='';
-    w.style.transformOrigin='top center';
+    w.style.transformOrigin='top left';
 
     // Temporarily allow overflow so we can measure true content height
     var prevOverflow=slide.style.overflow;
@@ -550,37 +598,85 @@ function autoFitSlides(){
     slide.style.overflow='visible';
     w.style.overflow='visible';
 
-    var sh=window.innerHeight; // Use viewport height directly
+    var sh=window.innerHeight;
+    var sw=window.innerWidth;
     var wh=w.scrollHeight;
+    var ww=w.scrollWidth;
 
     // Restore overflow
     slide.style.overflow=prevOverflow||'';
     w.style.overflow=prevWOverflow||'';
 
-    if(wh>sh*0.92){
-      var scale=Math.max(0.35,(sh*0.88)/wh);
+    // Scale based on whichever dimension overflows more
+    var scaleH = wh > sh*0.90 ? (sh*0.86)/wh : 1;
+    var scaleW = ww > sw*0.95 ? (sw*0.90)/ww : 1;
+    var scale = Math.min(scaleH, scaleW);
+
+    if(scale < 0.98){
+      scale = Math.max(0.30, scale);
       w.style.transform='scale('+scale+')';
-      w.style.transformOrigin='top center';
+      w.style.transformOrigin='top left';
+      // Adjust visual width so the slide doesn't have empty space on the right
+      w.style.width=(100/scale)+'%';
     }
+
+    // Force clip on slide regardless
+    slide.style.overflow='hidden';
   });
 }
 /* Run multiple passes to catch late-rendering content */
 window.addEventListener("load",function(){
   setTimeout(autoFitSlides,200);
   setTimeout(autoFitSlides,600);
-  setTimeout(autoFitSlides,1200);
-  setTimeout(autoFitSlides,2500); // final pass after lazy images
+  setTimeout(autoFitSlides,1500);
+  setTimeout(autoFitSlides,3000); // final pass after lazy images
 });
 window.addEventListener("resize",function(){setTimeout(autoFitSlides,150);});
 
 /* ── Eye icon: toggle nav arrow visibility ── */
+/* Default: arrows always visible.
+   Click eye: arrows hidden, appear only on hover.
+   Click again: arrows always visible again. */
 (function(){
-  var navVisible=true;
+  var alwaysVisible=true; // true = arrows always shown; false = arrows only on hover
+  var eyeSvgOpen='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>';
+  var eyeSvgClosed='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>';
+
+  function getAllNavZones(){
+    // Collect all nav zone elements using multiple strategies
+    var zones=[];
+    document.querySelectorAll('.nav-zone,.nav-prev,.nav-next,[class*="nav-prev"],[class*="nav-next"]').forEach(function(el){zones.push(el);});
+    // Also find left/right fixed zones with arrows
+    document.querySelectorAll('[style*="left:0"][style*="height:100"],[style*="right:0"][style*="height:100"],[style*="left: 0"][style*="height: 100"],[style*="right: 0"][style*="height: 100"]').forEach(function(el){
+      if(el.querySelector('svg')||el.textContent.trim().match(/^[<>←→‹›❮❯]$/)){
+        zones.push(el);
+      }
+    });
+    return zones;
+  }
+
+  function applyNavState(){
+    var zones=getAllNavZones();
+    if(alwaysVisible){
+      // Always visible: clear any inline styles, remove body class
+      document.body.classList.remove('nav-zones-hidden');
+      zones.forEach(function(el){
+        el.style.opacity='';
+        el.style.pointerEvents='';
+      });
+    }else{
+      // Hover-only: add body class (CSS handles opacity:0 default + :hover opacity:1)
+      document.body.classList.add('nav-zones-hidden');
+      zones.forEach(function(el){
+        el.style.opacity='';
+        el.style.pointerEvents='';
+      });
+    }
+  }
+
   function initEyeToggle(){
-    // Find the toolbar
     var toolbar=document.querySelector('.toolbar,[class*="toolbar"],[id*="toolbar"]');
     if(!toolbar){
-      // Try to find a fixed/absolute positioned bar at the bottom
       var allFixed=document.querySelectorAll('[style*="position:fixed"],[style*="position: fixed"]');
       allFixed.forEach(function(el){
         if(el.offsetTop>window.innerHeight*0.7 && el.querySelectorAll('button').length>=2){
@@ -590,46 +686,29 @@ window.addEventListener("resize",function(){setTimeout(autoFitSlides,150);});
     }
     if(!toolbar)return;
 
-    // Create eye toggle button
     var sep=document.createElement('span');
     sep.style.cssText='width:1px;height:20px;background:rgba(255,255,255,0.2);margin:0 4px;display:inline-block;vertical-align:middle;';
 
     var btn=document.createElement('button');
-    btn.title='Toggle navigation arrows';
-    btn.innerHTML='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>';
+    btn.title='Toggle navigation arrows (always visible / hover only)';
+    btn.innerHTML=eyeSvgOpen;
     btn.style.cssText='background:rgba(255,255,255,0.1);border:none;color:#e2e8f0;cursor:pointer;padding:6px 8px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;transition:all 0.2s;vertical-align:middle;';
     btn.addEventListener('mouseenter',function(){btn.style.background='rgba(255,255,255,0.2)';});
     btn.addEventListener('mouseleave',function(){
-      btn.style.background=navVisible?'rgba(255,255,255,0.1)':'rgba(239,68,68,0.2)';
+      btn.style.background=alwaysVisible?'rgba(255,255,255,0.1)':'rgba(239,68,68,0.2)';
     });
     btn.addEventListener('click',function(){
-      navVisible=!navVisible;
-      // Toggle class on body for CSS-based hiding
-      document.body.classList.toggle('nav-zones-hidden',!navVisible);
-      // Also toggle all nav zones directly
-      document.querySelectorAll('.nav-zone,.nav-prev,.nav-next,[class*="nav-prev"],[class*="nav-next"]').forEach(function(el){
-        el.style.opacity=navVisible?'':'0';
-        el.style.pointerEvents=navVisible?'':'none';
-      });
-      // Also target left/right fixed zones
-      document.querySelectorAll('[style*="left:0"][style*="height:100"],' +
-        '[style*="right:0"][style*="height:100"],' +
-        '[style*="left: 0"][style*="height: 100"],' +
-        '[style*="right: 0"][style*="height: 100"]').forEach(function(el){
-        if(el.querySelector('svg')||el.textContent.trim().match(/^[<>←→‹›❮❯]$/)){
-          el.style.opacity=navVisible?'':'0';
-          el.style.pointerEvents=navVisible?'':'none';
-        }
-      });
-      // Update button style
-      btn.style.background=navVisible?'rgba(255,255,255,0.1)':'rgba(239,68,68,0.2)';
-      btn.innerHTML=navVisible
-        ?'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>'
-        :'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>';
+      alwaysVisible=!alwaysVisible;
+      applyNavState();
+      btn.innerHTML=alwaysVisible?eyeSvgOpen:eyeSvgClosed;
+      btn.style.background=alwaysVisible?'rgba(255,255,255,0.1)':'rgba(239,68,68,0.2)';
     });
 
     toolbar.appendChild(sep);
     toolbar.appendChild(btn);
+
+    // Ensure initial state is correct
+    applyNavState();
   }
   if(document.readyState==='loading'){
     document.addEventListener('DOMContentLoaded',function(){setTimeout(initEyeToggle,500);});
