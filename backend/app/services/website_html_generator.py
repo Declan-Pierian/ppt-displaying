@@ -542,6 +542,32 @@ def _generate_adapted_slides(
     root_el = soup.find("root")
     slide_divs = root_el.find_all("div", class_="slide", recursive=False)
 
+    # ── 2a. Cap source slides to prevent overwhelming Claude ──
+    # 32 slides = 215 slots → too many for reliable JSON filling.
+    # Keep a representative subset: title + first N content + last summary.
+    MAX_ADAPTATION_SLIDES = 12
+    if len(slide_divs) > MAX_ADAPTATION_SLIDES:
+        original_count = len(slide_divs)
+        n_content = MAX_ADAPTATION_SLIDES - 2  # reserve 1 for title, 1 for summary
+        keep_indices = set()
+        keep_indices.add(0)  # title slide
+        for i in range(1, original_count - 1):
+            if len(keep_indices) < n_content + 1:  # +1 for the title already added
+                keep_indices.add(i)
+        keep_indices.add(original_count - 1)  # summary/CTA slide
+
+        # Remove non-kept slides from DOM (reverse order to preserve indices)
+        for i in range(original_count - 1, -1, -1):
+            if i not in keep_indices:
+                slide_divs[i].decompose()
+
+        # Rebuild slide_divs list from DOM (only surviving slides)
+        slide_divs = root_el.find_all("div", class_="slide", recursive=False)
+        logger.info(
+            "Capped adaptation source: %d/%d slides kept (max %d)",
+            len(slide_divs), original_count, MAX_ADAPTATION_SLIDES,
+        )
+
     # Each slot: (element_ref, "text"|"image", old_value)
     slots: list[tuple] = []
     slot_lines: list[str] = []
@@ -707,10 +733,30 @@ RULES:
             element["src"] = new_str
             applied += 1
 
-    logger.info("Applied %d/%d slot fills", applied, total_slots)
+    # Log unfilled slots as warnings
+    filled_ids = set()
+    for slot_id_str in fills:
+        try:
+            filled_ids.add(int(slot_id_str))
+        except (ValueError, TypeError):
+            pass
+    unfilled = [i for i in range(total_slots) if i not in filled_ids]
+    if unfilled:
+        logger.warning(
+            "Unfilled slots (%d): %s", len(unfilled),
+            unfilled[:20],  # log first 20
+        )
+    logger.info("Applied %d/%d slot fills (%d unfilled)", applied, total_slots, len(unfilled))
 
     # ── 8. Remove slides if needed ──
     to_remove = sorted(patch.get("remove_slides", []), reverse=True)
+    if len(to_remove) > len(slide_divs) - 2:
+        # Don't allow removing almost all slides — that defeats the purpose
+        logger.warning(
+            "Claude wants to remove %d/%d slides — limiting to keep at least 3",
+            len(to_remove), len(slide_divs),
+        )
+        to_remove = to_remove[:max(0, len(slide_divs) - 3)]
     for idx in to_remove:
         if 0 <= idx < len(slide_divs):
             slide_divs[idx].decompose()
