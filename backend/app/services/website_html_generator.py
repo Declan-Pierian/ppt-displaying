@@ -3,6 +3,10 @@
 The key insight: each crawled PAGE should produce MULTIPLE presentation slides.
 A homepage with 5 sections becomes 5+ slides, not 1 slide.
 This creates a proper pitch-deck style presentation.
+
+Token optimization: if a template shell exists (from any prior generation), Claude
+only generates the slide <div> elements — not the full HTML document.  This cuts
+output tokens by ~50-60%.
 """
 
 import os
@@ -10,6 +14,7 @@ import json
 import base64
 import logging
 import re
+from io import BytesIO
 from pathlib import Path
 
 import anthropic
@@ -17,6 +22,23 @@ import anthropic
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+def _compress_screenshot_to_jpeg(png_path: str, quality: int = 75) -> tuple[str, str]:
+    """Compress a PNG screenshot to JPEG for Claude API input (fewer tokens).
+
+    Returns (base64_data, media_type).
+    """
+    try:
+        from PIL import Image as PILImage
+        img = PILImage.open(png_path)
+        buf = BytesIO()
+        img.convert("RGB").save(buf, format="JPEG", quality=quality, optimize=True)
+        return base64.b64encode(buf.getvalue()).decode("utf-8"), "image/jpeg"
+    except Exception:
+        # Fallback: use raw PNG
+        with open(png_path, "rb") as f:
+            return base64.b64encode(f.read()).decode("utf-8"), "image/png"
 
 _REFERENCE_PATH = Path(__file__).parent / "reference_style.html"
 _REFERENCE_HTML = ""
@@ -57,7 +79,12 @@ def generate_website_webpage(
 ) -> dict | None:
     """Generate an HTML slideshow from crawled website data using Claude API.
 
-    Returns a dict with 'webpage_path' and 'token_usage', or None on failure.
+    Uses a two-path strategy for token optimization:
+    - Path A (template): If any prior webpage.html exists, extract the static shell
+      and ask Claude to generate ONLY the slide <div> elements.  ~50-60% fewer tokens.
+    - Path B (full): First-ever generation with no template — full HTML output.
+
+    Returns a dict with 'webpage_path', 'token_usage', and 'generation_mode'.
     """
     api_key = settings.CLAUDE_API_KEY
     if not api_key:
@@ -86,15 +113,373 @@ def generate_website_webpage(
                 f"/api/v1/media/{presentation_id}/{filename}"
             )
 
+    # ── TOKEN OPTIMIZATION: Try template-based generation first ──
+    from app.services.html_template import (
+        get_template, build_static_template, inject_slides,
+        cache_template_from_webpage, apply_background_to_template,
+    )
+
+    template_brightness = "dark"
+    if background_template_path and os.path.exists(background_template_path):
+        template_brightness = _analyse_template_brightness(background_template_path)
+
+    template_shell = get_template()
+    if template_shell is None:
+        # Try building from reference_style.html
+        template_shell = build_static_template(background_template_path, template_brightness)
+        if not template_shell or "<!-- SLIDES_PLACEHOLDER -->" not in template_shell:
+            template_shell = None
+
+    if template_shell:
+        # PATH A: Template-based generation (slides only)
+        logger.info(
+            "Using template-based generation for presentation %d (saves ~50%% output tokens)",
+            presentation_id,
+        )
+        # Apply the correct background to the template
+        template_shell = apply_background_to_template(
+            template_shell, background_template_path, template_brightness,
+        )
+        result = _generate_slides_only(
+            presentation_id, slides, title, source_url, total_pages,
+            screenshot_url_map, media_dir, pres_dir,
+            background_template_path, template_brightness,
+            template_shell,
+        )
+        if result:
+            result["generation_mode"] = "template"
+        return result
+
+    # PATH B: Full generation (first-ever, no template available)
+    logger.info("No template available — using full generation for presentation %d", presentation_id)
+    result = _generate_full_html(
+        presentation_id, slides, title, source_url, total_pages,
+        screenshot_url_map, media_dir, pres_dir,
+        background_template_path, template_brightness,
+    )
+    if result:
+        result["generation_mode"] = "full"
+        # Cache the template for future use
+        cache_template_from_webpage(result["webpage_path"])
+    return result
+
+
+def _generate_slides_only(
+    presentation_id: int,
+    slides: list,
+    title: str,
+    source_url: str,
+    total_pages: int,
+    screenshot_url_map: dict,
+    media_dir: str,
+    pres_dir: str,
+    background_template_path: str | None,
+    template_brightness: str,
+    template_shell: str,
+) -> dict | None:
+    """Generate ONLY slide <div> elements via Claude, then inject into the template.
+
+    This is the token-optimized path — output tokens reduced by ~50-60%.
+    """
+    from app.services.html_template import inject_slides
+    from app.services.extraction.progress import is_cancelled
+
+    api_key = settings.CLAUDE_API_KEY
+    content_blocks = []
+
+    # ── Build the SHORTER prompt (no CSS/JS/toolbar/navigation instructions) ──
+    bg_template_instruction = ""
+    if background_template_path and os.path.exists(background_template_path):
+        bg_name = os.path.basename(background_template_path)
+        if template_brightness == "light":
+            contrast_instruction = (
+                "- LIGHT background: use DARK text (#0f172a, #1e293b, #334155). "
+                "Cards: rgba(255,255,255,0.7) with backdrop-filter blur."
+            )
+        else:
+            contrast_instruction = (
+                "- DARK background: use LIGHT text (#f1f5f9, #e2e8f0, #cbd5e1). "
+                "Cards: rgba(30,41,59,0.8) with backdrop-filter blur."
+            )
+        bg_template_instruction = f"""
+## Background Template
+Use `background-size: 100% 100%` (NOT cover). Background URL: /api/v1/admin/background-templates/{bg_name}
+{contrast_instruction}
+"""
+
+    instructions = f"""You are an expert presentation designer. Generate ONLY the slide <div> elements for an HTML presentation.
+
+## OUTPUT FORMAT — CRITICAL
+- Output ONLY a sequence of <div class="slide">...</div> elements
+- Do NOT output <!DOCTYPE>, <html>, <head>, <style>, <script>, or any other wrapper
+- Start your output directly with the first <div class="slide"> and end with the last </div>
+- Each slide MUST use class="slide" and contain a <div class="zoom-wrapper"> inside it
+
+## Slide Structure
+1. **Title Slide** — Company name, tagline, hero visual. Big, bold.
+2. **Overview Slide** — What the company/product does. 2-3 bullet points.
+3. **Feature/Product Slides** (one per feature) — headline + 2-4 bullets + screenshot
+4. **Stats/Metrics Slide** — Any numbers, counts, metrics
+5. **Details Slides** — Deeper content: how it works, categories, use cases
+6. **Summary/CTA Slide** — Final slide with key takeaway
+
+## Design Rules
+- {"Light theme: DARK text (#0f172a, #1e293b, #334155)" if template_brightness == "light" and background_template_path else "Dark theme: LIGHT text (#f1f5f9, #e2e8f0, #cbd5e1)"}
+- Gradient accents: linear-gradient(135deg, #6366f1, #06b6d4)
+- {"Glassmorphism cards: background rgba(255,255,255,0.7), backdrop-filter blur" if template_brightness == "light" and background_template_path else "Glassmorphism cards: background rgba(30,41,59,0.8), backdrop-filter blur"}
+- Each slide: position absolute, inset 0, 100vw x 100vh, overflow hidden
+- Padding: 60px top/bottom, 100px left/right
+{bg_template_instruction}
+
+## Website Images — EVERY image MUST appear with its NAME displayed!
+**CRITICAL IMAGE RULES:**
+1. EVERY provided image MUST appear in the presentation
+2. NAME must be visible below every image — MANDATORY
+3. For people/team photos, use:
+```html
+<div class="person-card">
+  <img class="team-photo" src="IMAGE_URL" alt="NAME" style="width:120px;height:120px;border-radius:50%;object-fit:cover;">
+  <div class="person-name">PERSON NAME</div>
+  <div class="person-role">ROLE/TITLE</div>
+</div>
+```
+4. Wrap person cards in: <div class="team-grid">...</div>
+5. MAX 6-8 people per slide — create MULTIPLE team slides if needed
+
+## Screenshots
+Use these URLs for page screenshots:
+{json.dumps(screenshot_url_map, indent=2)}
+
+- Two-column layouts: add class="two-col" to the flex container
+- Text column: 55%, Image column: 38%, gap 40px
+- Screenshot images: max-width:38%; max-height:36vh; object-fit:contain
+
+## LAYOUT RULES
+- EVERY slide MUST fit 100vw x 100vh. NO overflow.
+- MAX 3 content cards per slide. EXCEPTION: team-grid can have 6-8 person-cards.
+- Max 3 bullet points per slide, short sentences
+- Create at LEAST 10-15 slides — each section/feature = its own slide
+- Content overflowing the viewport is a CRITICAL BUG
+
+## Presentation Info
+- Title: "{title}"
+- Source: {source_url}
+- Presentation ID: {presentation_id}
+- Pages crawled: {total_pages}
+
+## Website Content
+"""
+
+    content_blocks.append({"type": "text", "text": instructions})
+
+    # ── Add screenshots (JPEG compressed) + content for each page ──
+    _append_page_content_blocks(
+        content_blocks, slides, total_pages, screenshot_url_map,
+        media_dir, presentation_id,
+    )
+
+    # Final reminder (shorter version)
+    bg_reminder = ""
+    if background_template_path and os.path.exists(background_template_path):
+        bg_name = os.path.basename(background_template_path)
+        bg_reminder = f" Use background-size:100% 100% for the template image."
+    content_blocks.append({
+        "type": "text",
+        "text": (
+            "\n\nREMINDER: Create at LEAST 10-15 slides. Output ONLY <div class=\"slide\"> elements. "
+            "No DOCTYPE, no <html>, no <head>, no <style>, no <script>."
+            f"{bg_reminder}\n"
+            "ALL provided images MUST appear with their NAME visible. "
+            "Missing names = CRITICAL BUG. Use class='person-card' and class='team-grid'."
+        ),
+    })
+
+    # ── Call Claude API ──
+    if is_cancelled(presentation_id):
+        return None
+
+    logger.info(
+        "Calling Claude API (SLIDES ONLY mode, model=%s, pages=%d)...",
+        settings.CLAUDE_MODEL, total_pages,
+    )
+
+    try:
+        client = anthropic.Anthropic(api_key=api_key)
+        html_parts = []
+        token_usage = None
+        with client.messages.stream(
+            model=settings.CLAUDE_MODEL,
+            max_tokens=32000,
+            messages=[{"role": "user", "content": content_blocks}],
+        ) as stream:
+            for text in stream.text_stream:
+                html_parts.append(text)
+                if len(html_parts) % 50 == 0 and is_cancelled(presentation_id):
+                    return None
+            final_message = stream.get_final_message()
+            if hasattr(final_message, "usage") and final_message.usage:
+                token_usage = {
+                    "input_tokens": final_message.usage.input_tokens,
+                    "output_tokens": final_message.usage.output_tokens,
+                }
+    except Exception as e:
+        logger.error("Claude API call failed (slides-only): %s", e)
+        return None
+
+    slides_html = "".join(html_parts)
+
+    # Clean up: strip markdown fencing if present
+    if slides_html.strip().startswith("```"):
+        lines = slides_html.strip().split("\n")
+        if lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        slides_html = "\n".join(lines)
+
+    # Strip anything before first <div class="slide" and after last </div>
+    first_slide = re.search(r'<div\s+class="slide', slides_html)
+    if first_slide:
+        slides_html = slides_html[first_slide.start():]
+
+    # Inject into template
+    html_content = inject_slides(template_shell, slides_html)
+
+    # Save
+    webpage_path = os.path.join(pres_dir, "webpage.html")
+    with open(webpage_path, "w", encoding="utf-8") as f:
+        f.write(html_content)
+
+    logger.info(
+        "Website webpage generated (TEMPLATE mode): %s (%d chars, tokens=%s)",
+        webpage_path, len(html_content), token_usage,
+    )
+
+    return {
+        "webpage_path": webpage_path,
+        "token_usage": token_usage,
+    }
+
+
+def _append_page_content_blocks(
+    content_blocks: list,
+    slides: list,
+    total_pages: int,
+    screenshot_url_map: dict,
+    media_dir: str,
+    presentation_id: int,
+) -> None:
+    """Append screenshot images + extracted text for each page to the content blocks.
+
+    Used by both _generate_slides_only() and _generate_full_html().
+    Screenshots are JPEG-compressed for fewer input tokens.
+    """
+    for idx, slide in enumerate(slides):
+        slide_num = slide.get("slide_number") or slide.get("page_number", idx + 1)
+        page_url = slide.get("page_url", "")
+        page_title = slide.get("page_title", f"Page {slide_num}")
+        content = slide.get("content", {})
+
+        # Page screenshot (JPEG compressed for fewer tokens)
+        screenshot_path_rel = slide.get("screenshot_path", "")
+        if screenshot_path_rel:
+            filename = screenshot_path_rel.replace("media/", "", 1)
+            screenshot_abs = os.path.join(media_dir, filename)
+            if not os.path.exists(screenshot_abs):
+                screenshot_abs = os.path.join(os.path.dirname(media_dir), screenshot_path_rel)
+
+            if os.path.exists(screenshot_abs):
+                img_b64, media_type = _compress_screenshot_to_jpeg(screenshot_abs)
+                content_blocks.append({
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": media_type,
+                        "data": img_b64,
+                    },
+                })
+
+        screenshot_url = screenshot_url_map.get(f"page_{slide_num}", "")
+
+        # Build text description
+        page_info = f"\n{'='*60}\nPAGE {slide_num} of {total_pages}: {page_title}\n{'='*60}"
+        page_info += f"\nURL: {page_url}"
+        if screenshot_url:
+            page_info += f"\nScreenshot <img> URL: {screenshot_url}"
+
+        if content.get("meta_description"):
+            page_info += f"\nDescription: {content['meta_description']}"
+
+        if content.get("sections"):
+            page_info += f"\n\nSECTIONS ({len(content['sections'])} found):"
+            for section in content["sections"]:
+                page_info += f"\n  [{section['level'].upper()}] {section['heading']}"
+                for text in section.get("content", []):
+                    page_info += f"\n    - {text}"
+
+        if content.get("cards"):
+            page_info += f"\n\nCARDS/FEATURES ({len(content['cards'])} found):"
+            for card in content["cards"]:
+                page_info += f"\n  - {card}"
+
+        if content.get("list_items"):
+            page_info += f"\n\nLIST ITEMS:"
+            for item in content["list_items"]:
+                page_info += f"\n  - {item}"
+
+        if content.get("key_paragraphs"):
+            page_info += "\n\nKEY CONTENT:"
+            for para in content["key_paragraphs"]:
+                page_info += f"\n  {para}"
+
+        if content.get("images"):
+            img_count = len(content["images"])
+            named_imgs = [img for img in content["images"] if img.get("name")]
+            page_info += f"\n\n{'='*40}"
+            page_info += f"\nIMAGES FOUND: {img_count} total ({len(named_imgs)} with names)"
+            page_info += f"\nYou MUST include ALL {img_count} images with their NAME displayed!"
+            if img_count > 8:
+                slides_needed = (img_count + 7) // 8
+                page_info += f"\nCreate {slides_needed}+ team slides (max 6-8 per slide)"
+            page_info += f"\n{'='*40}"
+            for i, img in enumerate(content["images"], 1):
+                page_info += f"\n  [{i}/{img_count}] IMAGE:"
+                page_info += f"\n    URL: {img['src']}"
+                page_info += f"\n    NAME: {img.get('name') or '(unnamed)'}"
+                page_info += f"\n    ROLE: {img.get('role') or '(no role)'}"
+                if img.get("alt"):
+                    page_info += f"\n    ALT: {img['alt']}"
+                if img.get("description"):
+                    page_info += f"\n    INFO: {img['description']}"
+
+        if content.get("nav_items"):
+            page_info += f"\n\nNavigation: {', '.join(content['nav_items'][:10])}"
+
+        content_blocks.append({"type": "text", "text": page_info})
+
+
+def _generate_full_html(
+    presentation_id: int,
+    slides: list,
+    title: str,
+    source_url: str,
+    total_pages: int,
+    screenshot_url_map: dict,
+    media_dir: str,
+    pres_dir: str,
+    background_template_path: str | None,
+    template_brightness: str,
+) -> dict | None:
+    """Full HTML generation (original flow) — used only when no template exists."""
+    api_key = settings.CLAUDE_API_KEY
+
     # ── Background template handling ──
     bg_template_instruction = ""
     bg_template_b64 = None
-    template_brightness = "dark"  # default
     if background_template_path and os.path.exists(background_template_path):
-        with open(background_template_path, "rb") as f:
-            bg_template_b64 = base64.b64encode(f.read()).decode("utf-8")
+        # Compress background template too
+        bg_template_b64, _ = _compress_screenshot_to_jpeg(background_template_path, quality=70)
         bg_name = os.path.basename(background_template_path)
-        template_brightness = _analyse_template_brightness(background_template_path)
         logger.info("Template '%s' brightness: %s", bg_name, template_brightness)
 
         if template_brightness == "light":
@@ -289,92 +674,11 @@ to create a comprehensive presentation. Break each page into multiple slides.
             },
         })
 
-    # Add each page's screenshot + extracted content
-    for idx, slide in enumerate(slides):
-        slide_num = slide.get("slide_number") or slide.get("page_number", idx + 1)
-        page_url = slide.get("page_url", "")
-        page_title = slide.get("page_title", f"Page {slide_num}")
-        content = slide.get("content", {})
-
-        # Page screenshot as base64 image for Claude to see
-        screenshot_path_rel = slide.get("screenshot_path", "")
-        if screenshot_path_rel:
-            filename = screenshot_path_rel.replace("media/", "", 1)
-            screenshot_abs = os.path.join(media_dir, filename)
-            if not os.path.exists(screenshot_abs):
-                screenshot_abs = os.path.join(os.path.dirname(media_dir), screenshot_path_rel)
-
-            if os.path.exists(screenshot_abs):
-                with open(screenshot_abs, "rb") as f:
-                    img_b64 = base64.b64encode(f.read()).decode("utf-8")
-                content_blocks.append({
-                    "type": "image",
-                    "source": {
-                        "type": "base64",
-                        "media_type": "image/png",
-                        "data": img_b64,
-                    },
-                })
-
-        # Screenshot URL for Claude to use in the HTML
-        screenshot_url = screenshot_url_map.get(f"page_{slide_num}", "")
-
-        # Build detailed content description
-        page_info = f"\n{'='*60}\nPAGE {slide_num} of {total_pages}: {page_title}\n{'='*60}"
-        page_info += f"\nURL: {page_url}"
-        if screenshot_url:
-            page_info += f"\nScreenshot <img> URL: {screenshot_url}"
-
-        if content.get("meta_description"):
-            page_info += f"\nDescription: {content['meta_description']}"
-
-        if content.get("sections"):
-            page_info += f"\n\nSECTIONS ({len(content['sections'])} found — consider making each a separate slide):"
-            for section in content["sections"]:
-                page_info += f"\n  [{section['level'].upper()}] {section['heading']}"
-                for text in section.get("content", []):
-                    page_info += f"\n    • {text}"
-
-        if content.get("cards"):
-            page_info += f"\n\nCARDS/FEATURES ({len(content['cards'])} found):"
-            for card in content["cards"]:
-                page_info += f"\n  ▸ {card}"
-
-        if content.get("list_items"):
-            page_info += f"\n\nLIST ITEMS:"
-            for item in content["list_items"]:
-                page_info += f"\n  - {item}"
-
-        if content.get("key_paragraphs"):
-            page_info += "\n\nKEY CONTENT:"
-            for para in content["key_paragraphs"]:
-                page_info += f"\n  {para}"
-
-        if content.get("images"):
-            img_count = len(content["images"])
-            named_imgs = [img for img in content["images"] if img.get("name")]
-            page_info += f"\n\n{'='*40}"
-            page_info += f"\nIMAGES FOUND: {img_count} total ({len(named_imgs)} with names)"
-            page_info += f"\n⚠️ YOU MUST include ALL {img_count} images in the presentation!"
-            page_info += f"\n⚠️ Each image MUST have its NAME displayed below it!"
-            if img_count > 8:
-                slides_needed = (img_count + 7) // 8
-                page_info += f"\n⚠️ Create {slides_needed}+ team slides to fit all {img_count} people (max 6-8 per slide)"
-            page_info += f"\n{'='*40}"
-            for i, img in enumerate(content["images"], 1):
-                page_info += f"\n  [{i}/{img_count}] IMAGE:"
-                page_info += f"\n    URL: {img['src']}"
-                page_info += f"\n    NAME: {img.get('name') or '(unnamed)'}"
-                page_info += f"\n    ROLE: {img.get('role') or '(no role)'}"
-                if img.get("alt"):
-                    page_info += f"\n    ALT: {img['alt']}"
-                if img.get("description"):
-                    page_info += f"\n    INFO: {img['description']}"
-
-        if content.get("nav_items"):
-            page_info += f"\n\nNavigation: {', '.join(content['nav_items'][:10])}"
-
-        content_blocks.append({"type": "text", "text": page_info})
+    # Add each page's screenshot + extracted content (JPEG compressed)
+    _append_page_content_blocks(
+        content_blocks, slides, total_pages, screenshot_url_map,
+        media_dir, presentation_id,
+    )
 
     # Final reminder
     bg_reminder = ""

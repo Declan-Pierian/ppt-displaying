@@ -14,6 +14,7 @@ class PresentationResponse(BaseModel):
     is_active: bool
     error_message: str | None = None
     source_url: str | None = None
+    generation_mode: str | None = None
     created_at: datetime
     updated_at: datetime | None = None
 
@@ -44,6 +45,12 @@ class WebsiteSubmitRequest(BaseModel):
     background_template: str | None = None  # e.g. "Pierian_Background_1.jpg"
     force_regenerate: bool = False  # If True, regenerate even if URL was already processed
     crawl_mode: str = "full_site"  # "full_site" or "single_page"
+
+
+class RegenerateRequest(BaseModel):
+    crawl_mode: str = "full_site"  # "full_site" or "single_page"
+    max_pages: int = 0
+    background_template: str | None = None
 
 
 class URLCheckRequest(BaseModel):

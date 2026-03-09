@@ -1,8 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   ArrowLeft, BookOpen, MessageSquare, PanelRightClose, PanelRightOpen,
-  Loader2,
+  Loader2, RefreshCw,
 } from "lucide-react";
 import api, { API_BASE } from "../../lib/api";
 import { useSlideSync } from "../../hooks/useSlideSync";
@@ -21,6 +21,10 @@ export default function PresentationViewerPage() {
   const [activeTab, setActiveTab] = useState<SidebarTab>("references");
   const [title, setTitle] = useState("Presentation");
   const [loadingMeta, setLoadingMeta] = useState(true);
+  const [sourceUrl, setSourceUrl] = useState<string | null>(null);
+  const [regenerating, setRegenerating] = useState(false);
+  const [regenMessage, setRegenMessage] = useState<string | null>(null);
+  const regenEsRef = useRef<EventSource | null>(null);
 
   const { currentSlideIndex, totalSlides, iframeRef, refreshIframe } =
     useSlideSync();
@@ -43,7 +47,10 @@ export default function PresentationViewerPage() {
         const pres = res.data.find(
           (p: { id: number }) => p.id === presentationId
         );
-        if (pres) setTitle(pres.title);
+        if (pres) {
+          setTitle(pres.title);
+          setSourceUrl(pres.source_url || null);
+        }
       } catch {
         // Ignore — title just won't update
       } finally {
@@ -53,6 +60,68 @@ export default function PresentationViewerPage() {
     loadMeta();
     fetchHistory();
   }, [presentationId, fetchHistory]);
+
+  // Cleanup SSE on unmount
+  useEffect(() => {
+    return () => { regenEsRef.current?.close(); };
+  }, []);
+
+  const handleRegenerate = useCallback(async () => {
+    if (regenerating) return;
+    const confirmed = confirm(
+      "Regenerate this presentation?\n\n" +
+      "This will re-crawl the source website and regenerate slides if the content has changed.\n" +
+      "Note: Any CSS changes from AI chat edits will be preserved in the template, " +
+      "but slide content will be regenerated from the new crawl data."
+    );
+    if (!confirmed) return;
+
+    setRegenerating(true);
+    setRegenMessage("Starting regeneration...");
+
+    try {
+      await api.post(`/admin/regenerate/${presentationId}`, {
+        crawl_mode: "full_site",
+        max_pages: 0,
+      });
+
+      // Start SSE progress stream
+      regenEsRef.current?.close();
+      const es = new EventSource(`${API_BASE}/progress/${presentationId}`);
+      regenEsRef.current = es;
+
+      es.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          setRegenMessage(data.message || "Processing...");
+
+          if (data.status === "complete") {
+            es.close();
+            setRegenerating(false);
+            setRegenMessage(null);
+            refreshIframe();
+          } else if (data.status === "failed" || data.status === "cancelled") {
+            es.close();
+            setRegenerating(false);
+            setRegenMessage(null);
+            alert(data.status === "failed"
+              ? `Regeneration failed: ${data.message}`
+              : "Regeneration was cancelled.");
+          }
+        } catch { /* ignore parse errors */ }
+      };
+      es.onerror = () => {
+        es.close();
+        setRegenerating(false);
+        setRegenMessage(null);
+      };
+    } catch (err: unknown) {
+      setRegenerating(false);
+      setRegenMessage(null);
+      const msg = err instanceof Error ? err.message : "Failed to start regeneration";
+      alert(msg);
+    }
+  }, [presentationId, regenerating, refreshIframe]);
 
   if (!id || isNaN(presentationId)) {
     return (
@@ -140,33 +209,90 @@ export default function PresentationViewerPage() {
           </div>
         </div>
 
-        <button
-          onClick={() => setSidebarOpen(!sidebarOpen)}
-          title={sidebarOpen ? "Close sidebar" : "Open sidebar"}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-            padding: "6px 12px",
-            fontSize: 12,
-            background: sidebarOpen
-              ? "var(--c-primary-light)"
-              : "var(--c-surface-dim)",
-            border: "1px solid var(--c-border)",
-            borderRadius: 6,
-            color: sidebarOpen
-              ? "var(--c-primary)"
-              : "var(--c-text-secondary)",
-            cursor: "pointer",
-          }}
-        >
-          {sidebarOpen ? (
-            <PanelRightClose size={14} />
-          ) : (
-            <PanelRightOpen size={14} />
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {/* Regeneration progress banner */}
+          {regenerating && regenMessage && (
+            <span
+              style={{
+                fontSize: 11,
+                color: "var(--c-primary)",
+                background: "var(--c-primary-light)",
+                padding: "3px 10px",
+                borderRadius: 10,
+                display: "flex",
+                alignItems: "center",
+                gap: 5,
+                maxWidth: 280,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              <Loader2 size={12} className="animate-spin" />
+              {regenMessage}
+            </span>
           )}
-          {sidebarOpen ? "Close Panel" : "Open Panel"}
-        </button>
+
+          {/* Regenerate button — only for website presentations */}
+          {sourceUrl && (
+            <button
+              onClick={handleRegenerate}
+              disabled={regenerating}
+              title="Re-crawl website and regenerate if content changed"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "6px 12px",
+                fontSize: 12,
+                background: regenerating
+                  ? "var(--c-surface-dim)"
+                  : "var(--c-surface-dim)",
+                border: "1px solid var(--c-border)",
+                borderRadius: 6,
+                color: regenerating
+                  ? "var(--c-text-muted)"
+                  : "var(--c-text-secondary)",
+                cursor: regenerating ? "not-allowed" : "pointer",
+                opacity: regenerating ? 0.7 : 1,
+              }}
+            >
+              <RefreshCw
+                size={14}
+                className={regenerating ? "animate-spin" : ""}
+              />
+              Regenerate
+            </button>
+          )}
+
+          <button
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            title={sidebarOpen ? "Close sidebar" : "Open sidebar"}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "6px 12px",
+              fontSize: 12,
+              background: sidebarOpen
+                ? "var(--c-primary-light)"
+                : "var(--c-surface-dim)",
+              border: "1px solid var(--c-border)",
+              borderRadius: 6,
+              color: sidebarOpen
+                ? "var(--c-primary)"
+                : "var(--c-text-secondary)",
+              cursor: "pointer",
+            }}
+          >
+            {sidebarOpen ? (
+              <PanelRightClose size={14} />
+            ) : (
+              <PanelRightOpen size={14} />
+            )}
+            {sidebarOpen ? "Close Panel" : "Open Panel"}
+          </button>
+        </div>
       </div>
 
       {/* Main content area */}

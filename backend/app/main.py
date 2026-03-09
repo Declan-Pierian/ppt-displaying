@@ -28,9 +28,25 @@ def seed_admin(engine_ref):
             db.commit()
 
 
+def _run_migrations(engine_ref):
+    """Add new columns to existing tables if they don't exist yet (SQLite compat)."""
+    from sqlalchemy import inspect, text
+    inspector = inspect(engine_ref)
+    if "presentations" in inspector.get_table_names():
+        columns = [c["name"] for c in inspector.get_columns("presentations")]
+        with engine_ref.begin() as conn:
+            if "crawled_content" not in columns:
+                conn.execute(text("ALTER TABLE presentations ADD COLUMN crawled_content TEXT"))
+            if "crawl_hash" not in columns:
+                conn.execute(text("ALTER TABLE presentations ADD COLUMN crawl_hash VARCHAR(64)"))
+            if "generation_mode" not in columns:
+                conn.execute(text("ALTER TABLE presentations ADD COLUMN generation_mode VARCHAR(20)"))
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
+    _run_migrations(engine)
     seed_admin(engine)
     yield
 

@@ -4,7 +4,9 @@ import os
 import socket
 import time
 import json
+import hashlib
 import logging
+import shutil
 from urllib.parse import urlparse
 
 import httpx
@@ -24,11 +26,13 @@ from app.schemas.presentation import (
     URLCheckRequest,
     URLCheckResponse,
     BackgroundTemplateResponse,
+    RegenerateRequest,
 )
 from app.services.extraction.progress import (
     init_progress, update_progress, complete_progress, fail_progress,
     cancel_progress, is_cancelled,
 )
+from app.services.html_template import extract_template_shell, cache_template_from_webpage
 
 logger = logging.getLogger(__name__)
 
@@ -183,10 +187,20 @@ def process_website(
         if is_cancelled(presentation_id):
             raise RuntimeError("Cancelled by user")
 
-        # Phase 2: Save slides.json
+        # Phase 2: Save slides.json + store in DB for diffing
         slides_json_path = os.path.join(pres_dir, "slides.json")
+        crawled_json_str = json.dumps(result, ensure_ascii=False, sort_keys=True)
+        crawl_hash = hashlib.sha256(crawled_json_str.encode()).hexdigest()
+
         with open(slides_json_path, "w", encoding="utf-8") as f:
-            json.dump(result, f, ensure_ascii=False)
+            f.write(crawled_json_str)
+
+        # Store crawled content in DB for future diff detection
+        presentation = db.query(Presentation).filter(Presentation.id == presentation_id).first()
+        if presentation:
+            presentation.crawled_content = crawled_json_str
+            presentation.crawl_hash = crawl_hash
+            db.commit()
 
         page_count = len(result.get("slides", []))
         update_progress(
@@ -213,11 +227,47 @@ def process_website(
             if os.path.exists(candidate):
                 bg_template_path = candidate
 
-        # Phase 3: Generate HTML webpage
-        gen_result = generate_website_webpage(
-            presentation_id, slides_json_path, media_dir, pres_dir,
-            background_template_path=bg_template_path,
+        # Phase 2.5: Check if same URL has existing content with same hash (skip Claude)
+        gen_result = None
+        norm_url = _normalise_url_for_dedup(url)
+        existing_same_url = (
+            db.query(Presentation)
+            .filter(
+                Presentation.source_url.isnot(None),
+                Presentation.status == "ready",
+                Presentation.id != presentation_id,
+                Presentation.crawl_hash.isnot(None),
+            )
+            .all()
         )
+        for ex in existing_same_url:
+            if (
+                _normalise_url_for_dedup(ex.source_url) == norm_url
+                and ex.crawl_hash == crawl_hash
+            ):
+                # Content unchanged — reuse existing webpage.html
+                ex_pres_dir = os.path.join(settings.STORAGE_DIR, "presentations", str(ex.id))
+                ex_webpage = os.path.join(ex_pres_dir, "webpage.html")
+                if os.path.exists(ex_webpage):
+                    new_webpage = os.path.join(pres_dir, "webpage.html")
+                    shutil.copy2(ex_webpage, new_webpage)
+                    gen_result = {
+                        "webpage_path": new_webpage,
+                        "token_usage": {"input_tokens": 0, "output_tokens": 0},
+                        "generation_mode": "reuse",
+                    }
+                    logger.info(
+                        "Content unchanged for URL %s — reused webpage from presentation %d (0 tokens)",
+                        url, ex.id,
+                    )
+                    break
+
+        # Phase 3: Generate HTML webpage (only if not reused)
+        if gen_result is None:
+            gen_result = generate_website_webpage(
+                presentation_id, slides_json_path, media_dir, pres_dir,
+                background_template_path=bg_template_path,
+            )
 
         if not gen_result:
             if is_cancelled(presentation_id):
@@ -233,6 +283,7 @@ def process_website(
         presentation.slide_count = page_count
         presentation.title = result.get("title") or presentation.title
         presentation.slide_data_path = slides_json_path
+        presentation.generation_mode = gen_result.get("generation_mode", "full")
 
         log = db.query(UploadLog).filter(UploadLog.presentation_id == presentation_id).first()
         if log:
@@ -270,6 +321,212 @@ def process_website(
             log.error_message = error_str
             log.processing_time_ms = int((time.time() - start_time) * 1000)
 
+        db.commit()
+    finally:
+        db.close()
+
+
+def process_regeneration(
+    presentation_id: int,
+    crawl_mode: str = "full_site",
+    max_pages: int = 0,
+    background_template: str | None = None,
+):
+    """Background task: re-crawl the website, diff against stored content,
+    and regenerate only if the content has changed.  Preserves chat-edit CSS
+    by extracting the template from the CURRENT webpage before regeneration.
+    """
+    from app.services.website_crawler import crawl_website
+    from app.services.website_html_generator import generate_website_webpage
+    from datetime import datetime, timezone
+
+    is_single = (crawl_mode == "single_page")
+    db = SessionLocal()
+    start_time = time.time()
+
+    try:
+        presentation = db.query(Presentation).filter(Presentation.id == presentation_id).first()
+        if not presentation or not presentation.source_url:
+            fail_progress(presentation_id, error="Presentation not found or has no source URL")
+            return
+
+        url = presentation.source_url
+        pres_dir = os.path.join(settings.STORAGE_DIR, "presentations", str(presentation_id))
+        media_dir = presentation.media_dir or os.path.join(pres_dir, "media")
+        os.makedirs(media_dir, exist_ok=True)
+
+        if is_single:
+            max_pages = 1
+
+        estimated_pages = 1 if is_single else (max_pages if max_pages > 0 else 20)
+        init_progress(presentation_id, estimated_pages + 2)
+
+        # ── Phase 1: Re-crawl ──
+        crawl_msg = "Re-crawling this single page..." if is_single else "Re-crawling website for changes..."
+        update_progress(presentation_id, current_slide=0, phase="crawling", message=crawl_msg)
+
+        def on_crawl_progress(current, total, message):
+            update_progress(presentation_id, current_slide=current, phase="crawling", message=message)
+
+        result = crawl_website(
+            url=url,
+            presentation_id=presentation_id,
+            media_dir=media_dir,
+            max_pages=max_pages,
+            progress_callback=on_crawl_progress,
+            single_page=is_single,
+        )
+
+        if is_cancelled(presentation_id):
+            raise RuntimeError("Cancelled by user")
+
+        # ── Phase 2: Compute hash and compare ──
+        crawled_json_str = json.dumps(result, ensure_ascii=False, sort_keys=True)
+        new_hash = hashlib.sha256(crawled_json_str.encode()).hexdigest()
+        old_hash = presentation.crawl_hash
+
+        page_count = len(result.get("slides", []))
+        update_progress(
+            presentation_id,
+            current_slide=page_count,
+            phase="crawl_done",
+            message=f"Re-crawl complete! {page_count} pages captured. Comparing content...",
+        )
+        time.sleep(0.5)
+
+        if new_hash == old_hash:
+            # Content unchanged — no regeneration needed
+            presentation.status = "ready"
+            db.commit()
+            complete_progress(
+                presentation_id,
+                message=f"No changes detected in website content. Presentation unchanged ({page_count} pages).",
+                token_usage={"input_tokens": 0, "output_tokens": 0},
+            )
+            return
+
+        # ── Phase 3: Content changed — save new slides.json ──
+        slides_json_path = os.path.join(pres_dir, "slides.json")
+        with open(slides_json_path, "w", encoding="utf-8") as f:
+            f.write(crawled_json_str)
+
+        # Update crawled content in DB
+        presentation.crawled_content = crawled_json_str
+        presentation.crawl_hash = new_hash
+        db.commit()
+
+        # ── Phase 4: Backup current webpage.html ──
+        current_webpage = os.path.join(pres_dir, "webpage.html")
+        if os.path.exists(current_webpage):
+            # Determine version number from existing backups
+            version = 1
+            while os.path.exists(os.path.join(pres_dir, f"webpage_v{version}.html")):
+                version += 1
+            backup_path = os.path.join(pres_dir, f"webpage_v{version}.html")
+            shutil.copy2(current_webpage, backup_path)
+            logger.info("Backed up webpage.html → %s", backup_path)
+
+            # Extract template from current webpage (preserves chat-edit CSS)
+            try:
+                current_html = open(current_webpage, "r", encoding="utf-8").read()
+                shell = extract_template_shell(current_html)
+                if shell:
+                    cache_template_from_webpage(current_webpage)
+                    logger.info("Extracted template from current webpage (preserves chat edits)")
+            except Exception as e:
+                logger.warning("Failed to extract template from current webpage: %s", e)
+
+        # ── Phase 5: Regenerate with template path ──
+        update_progress(
+            presentation_id,
+            current_slide=page_count,
+            phase="generating",
+            message="Content changed! AI is regenerating slides...",
+        )
+
+        # Resolve background template
+        bg_template_path = None
+        if background_template:
+            candidate = os.path.join(_TEMPLATES_DIR, background_template)
+            if os.path.exists(candidate):
+                bg_template_path = candidate
+
+        gen_result = generate_website_webpage(
+            presentation_id, slides_json_path, media_dir, pres_dir,
+            background_template_path=bg_template_path,
+        )
+
+        if not gen_result:
+            if is_cancelled(presentation_id):
+                raise RuntimeError("Cancelled by user")
+            raise RuntimeError("Webpage regeneration returned None")
+
+        # Inject regeneration comment into the HTML
+        webpage_path = gen_result["webpage_path"]
+        try:
+            html = open(webpage_path, "r", encoding="utf-8").read()
+            timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            regen_comment = f"<!-- Regenerated: {timestamp} | Version: {version + 1 if os.path.exists(os.path.join(pres_dir, 'webpage_v1.html')) else 1} -->"
+            html = html.replace("<!DOCTYPE", regen_comment + "\n<!DOCTYPE", 1)
+            if "<!DOCTYPE" not in html:
+                html = regen_comment + "\n" + html
+            with open(webpage_path, "w", encoding="utf-8") as f:
+                f.write(html)
+        except Exception as e:
+            logger.warning("Failed to inject regeneration comment: %s", e)
+
+        # ── Phase 6: Append to edit_history.json ──
+        try:
+            history_path = os.path.join(pres_dir, "edit_history.json")
+            history = []
+            if os.path.exists(history_path):
+                with open(history_path, "r", encoding="utf-8") as f:
+                    history = json.load(f)
+
+            history.append({
+                "version": len(history) + 1,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "prompt": "[Auto-regeneration] Website content changed — slides regenerated",
+                "slides_affected": list(range(1, page_count + 1)),
+                "generation_mode": gen_result.get("generation_mode", "template"),
+            })
+            with open(history_path, "w", encoding="utf-8") as f:
+                json.dump(history, f, indent=2)
+        except Exception as e:
+            logger.warning("Failed to update edit_history.json: %s", e)
+
+        # ── Phase 7: Update DB ──
+        presentation = db.query(Presentation).filter(Presentation.id == presentation_id).first()
+        presentation.status = "ready"
+        presentation.slide_count = page_count
+        presentation.title = result.get("title") or presentation.title
+        presentation.slide_data_path = slides_json_path
+        presentation.generation_mode = gen_result.get("generation_mode", "diff_patch")
+        db.commit()
+
+        # Completion message
+        token_usage = gen_result.get("token_usage")
+        completion_msg = f"Regeneration complete! {page_count} pages refreshed."
+        if token_usage:
+            input_t = token_usage.get("input_tokens", 0)
+            output_t = token_usage.get("output_tokens", 0)
+            completion_msg += f" Tokens: {input_t:,} in + {output_t:,} out = {input_t + output_t:,} total."
+
+        complete_progress(presentation_id, message=completion_msg, token_usage=token_usage)
+
+    except Exception as e:
+        error_str = str(e)
+        if "Cancelled by user" in error_str:
+            logger.info("Regeneration cancelled for presentation %d", presentation_id)
+            cancel_progress(presentation_id)
+        else:
+            logger.error("Regeneration failed for presentation %d: %s", presentation_id, e, exc_info=True)
+            fail_progress(presentation_id, error=error_str)
+
+        presentation = db.query(Presentation).filter(Presentation.id == presentation_id).first()
+        if presentation:
+            presentation.status = "ready"  # Restore to ready on failure (don't leave stuck in processing)
+            presentation.error_message = error_str if "Cancelled" not in error_str else None
         db.commit()
     finally:
         db.close()
@@ -330,6 +587,52 @@ async def cancel_generation(
     db.commit()
 
     return {"detail": "Generation cancelled", "presentation_id": presentation_id}
+
+
+@router.post("/regenerate/{presentation_id}")
+async def regenerate_presentation(
+    presentation_id: int,
+    body: RegenerateRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_admin_user),
+):
+    """Re-crawl the source URL and regenerate if content has changed."""
+    presentation = db.query(Presentation).filter(Presentation.id == presentation_id).first()
+    if not presentation:
+        raise HTTPException(status_code=404, detail="Presentation not found")
+
+    if not presentation.source_url:
+        raise HTTPException(status_code=400, detail="Presentation has no source URL (not a website presentation)")
+
+    if presentation.status != "ready":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Presentation is currently '{presentation.status}' — can only regenerate when 'ready'",
+        )
+
+    # Set to processing
+    presentation.status = "processing"
+    db.commit()
+
+    logger.info(
+        "Regeneration requested: presentation_id=%d, url=%s, crawl_mode=%s",
+        presentation_id, presentation.source_url, body.crawl_mode,
+    )
+
+    background_tasks.add_task(
+        process_regeneration,
+        presentation_id,
+        body.crawl_mode,
+        body.max_pages,
+        body.background_template,
+    )
+
+    return {
+        "detail": "Regeneration started",
+        "presentation_id": presentation_id,
+        "source_url": presentation.source_url,
+    }
 
 
 @router.get("/background-templates", response_model=list[BackgroundTemplateResponse])

@@ -19,6 +19,9 @@ class Presentation(Base):
     status = Column(String(20), nullable=False, default="processing")
     error_message = Column(Text, nullable=True)
     source_url = Column(String(2048), nullable=True)  # NULL for PPTX uploads, set for URL-based
+    crawled_content = Column(Text, nullable=True)  # Full slides.json as JSON string for fast DB lookups
+    crawl_hash = Column(String(64), nullable=True)  # SHA-256 of crawled_content for diff detection
+    generation_mode = Column(String(20), nullable=True)  # "full" | "template" | "reuse" | "diff_patch"
     is_active = Column(Boolean, nullable=False, default=True)
     uploaded_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, server_default=func.now())

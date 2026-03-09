@@ -14,6 +14,7 @@ const STATUS_STYLES: Record<string, { bg: string; color: string; Icon: typeof Ch
 export default function PresentationsPage() {
   const [presentations, setPresentations] = useState<PresentationAdminMeta[]>([]);
   const [loading, setLoading] = useState(true);
+  const [regeneratingId, setRegeneratingId] = useState<number | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -33,6 +34,34 @@ export default function PresentationsPage() {
     if (!confirm("Delete this presentation?")) return;
     try { await api.delete(`/admin/presentations/${id}`); refresh(); }
     catch (err) { console.error(err); }
+  };
+
+  const regeneratePres = async (id: number) => {
+    const confirmed = confirm(
+      "Regenerate this presentation?\n\n" +
+      "This will re-crawl the source website and regenerate slides if content has changed."
+    );
+    if (!confirmed) return;
+    setRegeneratingId(id);
+    try {
+      await api.post(`/admin/regenerate/${id}`, { crawl_mode: "full_site", max_pages: 0 });
+      // Listen for completion via SSE
+      const es = new EventSource(`/api/v1/progress/${id}`);
+      es.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.status === "complete" || data.status === "failed" || data.status === "cancelled") {
+            es.close();
+            setRegeneratingId(null);
+            refresh();
+          }
+        } catch { /* ignore */ }
+      };
+      es.onerror = () => { es.close(); setRegeneratingId(null); refresh(); };
+    } catch (err) {
+      console.error(err);
+      setRegeneratingId(null);
+    }
   };
 
   const visible = presentations.filter(p => p.is_active).length;
@@ -118,6 +147,17 @@ export default function PresentationsPage() {
                       <>
                         <Link to={`/admin/presentations/${pres.id}/view`} className="btn-icon" title="View & Edit" style={{ color: "var(--c-primary)" }}><PenLine size={18} /></Link>
                         <a href={`/api/v1/presentations/${pres.id}/webpage`} target="_blank" rel="noopener noreferrer" className="btn-icon" title="View Full Screen"><ExternalLink size={18} /></a>
+                        {pres.source_url && (
+                          <button
+                            onClick={() => regeneratePres(pres.id)}
+                            disabled={regeneratingId === pres.id}
+                            className="btn-icon"
+                            title="Re-crawl and regenerate"
+                            style={{ color: regeneratingId === pres.id ? "var(--c-text-muted)" : "#06b6d4" }}
+                          >
+                            <RefreshCw size={18} className={regeneratingId === pres.id ? "animate-spin" : ""} />
+                          </button>
+                        )}
                       </>
                     )}
                     <button onClick={() => toggleActive(pres.id, pres.is_active)} className={`btn-icon`} title={pres.is_active ? "Hide" : "Show"}>
