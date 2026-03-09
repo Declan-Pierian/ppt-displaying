@@ -190,7 +190,12 @@ def process_website(
         # Phase 2: Save slides.json + store in DB for diffing
         slides_json_path = os.path.join(pres_dir, "slides.json")
         crawled_json_str = json.dumps(result, ensure_ascii=False, sort_keys=True)
-        crawl_hash = hashlib.sha256(crawled_json_str.encode()).hexdigest()
+
+        # Hash only the content (strip presentation_id which changes per record)
+        hash_data = {k: v for k, v in result.items() if k != "presentation_id"}
+        crawl_hash = hashlib.sha256(
+            json.dumps(hash_data, ensure_ascii=False, sort_keys=True).encode()
+        ).hexdigest()
 
         with open(slides_json_path, "w", encoding="utf-8") as f:
             f.write(crawled_json_str)
@@ -382,7 +387,12 @@ def process_regeneration(
 
         # ── Phase 2: Compute hash and compare ──
         crawled_json_str = json.dumps(result, ensure_ascii=False, sort_keys=True)
-        new_hash = hashlib.sha256(crawled_json_str.encode()).hexdigest()
+
+        # Hash only the content (strip presentation_id which changes per record)
+        hash_data = {k: v for k, v in result.items() if k != "presentation_id"}
+        new_hash = hashlib.sha256(
+            json.dumps(hash_data, ensure_ascii=False, sort_keys=True).encode()
+        ).hexdigest()
         old_hash = presentation.crawl_hash
 
         page_count = len(result.get("slides", []))

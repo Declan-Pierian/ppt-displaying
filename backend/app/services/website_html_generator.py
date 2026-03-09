@@ -203,7 +203,8 @@ def _generate_slides_only(
             )
         bg_template_instruction = f"""
 ## Background Template
-Use `background-size: 100% 100%` (NOT cover). Background URL: /api/v1/admin/background-templates/{bg_name}
+Use `background-size: cover` to fill the slide. Background URL: /api/v1/admin/background-templates/{bg_name}
+Use separate CSS properties: background-image, background-size, background-position (NOT the shorthand `background:`).
 {contrast_instruction}
 """
 
@@ -282,7 +283,7 @@ Use these URLs for page screenshots:
     bg_reminder = ""
     if background_template_path and os.path.exists(background_template_path):
         bg_name = os.path.basename(background_template_path)
-        bg_reminder = f" Use background-size:100% 100% for the template image."
+        bg_reminder = f" Use background-size:cover for the template image."
     content_blocks.append({
         "type": "text",
         "text": (
@@ -517,14 +518,17 @@ This is NOT optional. Do NOT recreate it with gradients. Do NOT use a solid colo
 **REQUIRED CSS for EVERY .slide:**
 ```css
 .slide {{
-  background: {overlay_css}, url('/api/v1/admin/background-templates/{bg_name}') center center / 100% 100% no-repeat !important;
-  background-size: 100% 100% !important;
+  background-image: {overlay_css}, url('/api/v1/admin/background-templates/{bg_name}') !important;
+  background-size: cover, cover !important;
+  background-position: center center !important;
+  background-repeat: no-repeat !important;
 }}
 ```
 
 - The image URL is: /api/v1/admin/background-templates/{bg_name}
 - Apply this to every single .slide element — no exceptions
-- CRITICAL: Use `background-size: 100% 100%` (NOT `cover`) — the template must display in FULL without any cropping, including logos in corners
+- CRITICAL: Use `background-size: cover` so the template fills the entire slide without gaps
+- Use separate `background-image`, `background-size`, `background-position` properties (NOT the shorthand `background:`)
 - Add a subtle semi-transparent overlay on top for text readability
 - The overlay should be thin enough that the background image is clearly visible through it
 - Do NOT use solid color backgrounds — the actual template image must be visible on every slide
@@ -686,8 +690,9 @@ to create a comprehensive presentation. Break each page into multiple slides.
         bg_name = os.path.basename(background_template_path)
         bg_reminder = (
             f" BACKGROUND IMAGE IS MANDATORY: Every .slide MUST have "
-            f"background: url('/api/v1/admin/background-templates/{bg_name}') center center / 100% 100%; "
-            f"— the actual image file, NOT a gradient or solid color. Use 100% 100% sizing, NOT cover."
+            f"background-image: url('/api/v1/admin/background-templates/{bg_name}'); "
+            f"background-size: cover; background-position: center; "
+            f"— the actual image file, NOT a gradient or solid color."
         )
     content_blocks.append({
         "type": "text",
@@ -792,11 +797,12 @@ to create a comprehensive presentation. Break each page into multiple slides.
         else:
             overlay = "linear-gradient(rgba(15,23,42,0.35),rgba(15,23,42,0.45))"
         bg_image_css = (
-            f'/* Force background template image on every slide — 100% 100% to show full image without cropping */\n'
+            f'/* Force background template image on every slide */\n'
             f'.slide{{\n'
-            f'  background:{overlay},'
-            f"url('/api/v1/admin/background-templates/{bg_name_css}') center center / 100% 100% no-repeat !important;\n"
-            f'  background-size:100% 100% !important;\n'
+            f"  background-image:{overlay},url('/api/v1/admin/background-templates/{bg_name_css}') !important;\n"
+            f'  background-size:cover,cover !important;\n'
+            f'  background-position:center center !important;\n'
+            f'  background-repeat:no-repeat !important;\n'
             f'}}\n'
         )
 

@@ -660,16 +660,25 @@ export default function UploadPage() {
                       Use Existing
                     </button>
                     <button
-                      onClick={() => {
+                      onClick={async () => {
+                        const presId = duplicateInfo.presentation_id!;
                         setDuplicateInfo(null);
-                        // Check if this is a specific route — if so, ask crawl mode first
-                        const routeCheck = isSpecificRoute(websiteUrl);
-                        if (routeCheck.isRoute) {
-                          setPendingForceRegenerate(true);
-                          setDetectedRoute(routeCheck.path);
-                          setShowCrawlModeDialog(true);
-                        } else {
-                          doSubmitUrl(true, "full_site");
+                        setUploading(true);
+                        setResult(null);
+                        setProgress(null);
+                        try {
+                          await api.post(`/admin/regenerate/${presId}`, {
+                            crawl_mode: "full_site",
+                            max_pages: maxPages,
+                            background_template: selectedTemplate,
+                          });
+                          startProgressStream(presId);
+                        } catch (err: any) {
+                          setUploading(false);
+                          setResult({
+                            success: false,
+                            message: err.response?.data?.detail || "Regeneration failed",
+                          });
                         }
                       }}
                       style={{

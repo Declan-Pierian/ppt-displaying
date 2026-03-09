@@ -210,9 +210,10 @@ def apply_background_to_template(
     new_bg_rule = (
         f'/* Force background template */\n'
         f'.slide{{\n'
-        f'  background:{overlay},'
-        f"url('/api/v1/admin/background-templates/{bg_name}') center center / 100% 100% no-repeat !important;\n"
-        f'  background-size:100% 100% !important;\n'
+        f"  background-image:{overlay},url('/api/v1/admin/background-templates/{bg_name}') !important;\n"
+        f'  background-size:cover,cover !important;\n'
+        f'  background-position:center center !important;\n'
+        f'  background-repeat:no-repeat !important;\n'
         f'}}\n'
     )
 
@@ -290,9 +291,10 @@ def _build_safety_css(
         bg_image_css = (
             f'/* Force background template */\n'
             f'.slide{{\n'
-            f'  background:{overlay},'
-            f"url('/api/v1/admin/background-templates/{bg_name}') center center / 100% 100% no-repeat !important;\n"
-            f'  background-size:100% 100% !important;\n'
+            f"  background-image:{overlay},url('/api/v1/admin/background-templates/{bg_name}') !important;\n"
+            f'  background-size:cover,cover !important;\n'
+            f'  background-position:center center !important;\n'
+            f'  background-repeat:no-repeat !important;\n'
             f'}}\n'
         )
 
