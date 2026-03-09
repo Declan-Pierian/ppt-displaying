@@ -243,6 +243,9 @@ export interface PresentationAdminMeta extends PresentationMeta {
   is_active: boolean;
   error_message: string | null;
   source_url: string | null;
+  generation_mode: string | null;
+  based_on_id: number | null;
+  similarity_score: number | null;
   updated_at: string | null;
 }
 

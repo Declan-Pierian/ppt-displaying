@@ -41,6 +41,10 @@ def _run_migrations(engine_ref):
                 conn.execute(text("ALTER TABLE presentations ADD COLUMN crawl_hash VARCHAR(64)"))
             if "generation_mode" not in columns:
                 conn.execute(text("ALTER TABLE presentations ADD COLUMN generation_mode VARCHAR(20)"))
+            if "based_on_id" not in columns:
+                conn.execute(text("ALTER TABLE presentations ADD COLUMN based_on_id INTEGER"))
+            if "similarity_score" not in columns:
+                conn.execute(text("ALTER TABLE presentations ADD COLUMN similarity_score REAL"))
 
 
 @asynccontextmanager

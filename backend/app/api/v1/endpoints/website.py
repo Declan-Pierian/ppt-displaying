@@ -256,6 +256,20 @@ def process_website(
                 if os.path.exists(ex_webpage):
                     new_webpage = os.path.join(pres_dir, "webpage.html")
                     shutil.copy2(ex_webpage, new_webpage)
+
+                    # Apply new background template if selected
+                    if bg_template_path:
+                        from app.services.website_html_generator import _analyse_template_brightness
+                        from app.services.html_template import apply_background_to_template
+                        try:
+                            html = open(new_webpage, "r", encoding="utf-8").read()
+                            brightness = _analyse_template_brightness(bg_template_path)
+                            html = apply_background_to_template(html, bg_template_path, brightness)
+                            with open(new_webpage, "w", encoding="utf-8") as f:
+                                f.write(html)
+                        except Exception as e:
+                            logger.warning("Failed to apply background to reused webpage: %s", e)
+
                     gen_result = {
                         "webpage_path": new_webpage,
                         "token_usage": {"input_tokens": 0, "output_tokens": 0},
@@ -267,11 +281,38 @@ def process_website(
                     )
                     break
 
+        # Phase 2.7: Similarity-based adaptation search
+        similar_pres_id = None
+        sim_score = 0.0
+
+        if gen_result is None:
+            from app.services.similarity import find_most_similar_presentation
+
+            update_progress(
+                presentation_id, current_slide=0, phase="similarity",
+                message="Searching for similar presentations...",
+            )
+            match = find_most_similar_presentation(
+                crawled_json_str, db, exclude_id=presentation_id,
+            )
+            if match:
+                similar_pres_id, similar_url, sim_score = match
+                logger.info(
+                    "Similarity match for presentation %d: #%d (%s) — score %.2f",
+                    presentation_id, similar_pres_id, similar_url, sim_score,
+                )
+                update_progress(
+                    presentation_id, current_slide=0, phase="generating",
+                    message=f"Found similar presentation (score: {sim_score:.0%}) — adapting...",
+                )
+
         # Phase 3: Generate HTML webpage (only if not reused)
         if gen_result is None:
             gen_result = generate_website_webpage(
                 presentation_id, slides_json_path, media_dir, pres_dir,
                 background_template_path=bg_template_path,
+                similar_presentation_id=similar_pres_id,
+                similarity_score=sim_score,
             )
 
         if not gen_result:
@@ -289,6 +330,9 @@ def process_website(
         presentation.title = result.get("title") or presentation.title
         presentation.slide_data_path = slides_json_path
         presentation.generation_mode = gen_result.get("generation_mode", "full")
+        if gen_result.get("based_on_id"):
+            presentation.based_on_id = gen_result["based_on_id"]
+            presentation.similarity_score = gen_result["similarity_score"]
 
         log = db.query(UploadLog).filter(UploadLog.presentation_id == presentation_id).first()
         if log:
@@ -303,6 +347,20 @@ def process_website(
             input_t = token_usage.get("input_tokens", 0)
             output_t = token_usage.get("output_tokens", 0)
             completion_msg += f" Tokens used: {input_t:,} input + {output_t:,} output = {input_t + output_t:,} total."
+        if gen_result.get("based_on_id"):
+            sim_pct = gen_result['similarity_score']
+            completion_msg += (
+                f" Adapted from presentation #{gen_result['based_on_id']}"
+                f" (similarity: {sim_pct:.0%})."
+            )
+            # Estimate savings: from-scratch template path typically outputs
+            # ~10-16K tokens of slide HTML. The JSON-patch approach outputs
+            # only the text/image replacements (~2-4K tokens).
+            if token_usage:
+                est_from_scratch_output = 12000  # typical template-path output
+                saved = est_from_scratch_output - output_t
+                if saved > 0:
+                    completion_msg += f" Estimated ~{saved:,} output tokens saved vs from-scratch."
 
         complete_progress(presentation_id, message=completion_msg, token_usage=token_usage)
 
@@ -342,7 +400,8 @@ def process_regeneration(
     by extracting the template from the CURRENT webpage before regeneration.
     """
     from app.services.website_crawler import crawl_website
-    from app.services.website_html_generator import generate_website_webpage
+    from app.services.website_html_generator import generate_website_webpage, _analyse_template_brightness
+    from app.services.html_template import apply_background_to_template
     from datetime import datetime, timezone
 
     is_single = (crawl_mode == "single_page")
@@ -405,7 +464,41 @@ def process_regeneration(
         time.sleep(0.5)
 
         if new_hash == old_hash:
-            # Content unchanged — no regeneration needed
+            # Content unchanged — check if background template changed
+            bg_template_path = None
+            if background_template:
+                candidate = os.path.join(_TEMPLATES_DIR, background_template)
+                if os.path.exists(candidate):
+                    bg_template_path = candidate
+
+            current_webpage = os.path.join(pres_dir, "webpage.html")
+            if bg_template_path and os.path.exists(current_webpage):
+                # Apply new background to existing webpage (0 AI tokens)
+                update_progress(
+                    presentation_id, current_slide=page_count,
+                    phase="generating",
+                    message="No content changes. Updating background template...",
+                )
+                try:
+                    html = open(current_webpage, "r", encoding="utf-8").read()
+                    brightness = _analyse_template_brightness(bg_template_path)
+                    html = apply_background_to_template(html, bg_template_path, brightness)
+                    with open(current_webpage, "w", encoding="utf-8") as f:
+                        f.write(html)
+                    presentation.status = "ready"
+                    presentation.generation_mode = "bg_update"
+                    db.commit()
+                    complete_progress(
+                        presentation_id,
+                        message=f"Background updated! Content unchanged ({page_count} pages). 0 AI tokens used.",
+                        token_usage={"input_tokens": 0, "output_tokens": 0},
+                    )
+                    return
+                except Exception as e:
+                    logger.warning("Failed to update background: %s", e)
+                    # Fall through to normal "no changes" path
+
+            # No content change and no background change
             presentation.status = "ready"
             db.commit()
             complete_progress(

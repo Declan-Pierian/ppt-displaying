@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, BigInteger, Boolean, DateTime, Text, ForeignKey
+from sqlalchemy import Column, Integer, Float, String, BigInteger, Boolean, DateTime, Text, ForeignKey
 from sqlalchemy.sql import func
 
 from app.models.database import Base
@@ -21,7 +21,9 @@ class Presentation(Base):
     source_url = Column(String(2048), nullable=True)  # NULL for PPTX uploads, set for URL-based
     crawled_content = Column(Text, nullable=True)  # Full slides.json as JSON string for fast DB lookups
     crawl_hash = Column(String(64), nullable=True)  # SHA-256 of crawled_content for diff detection
-    generation_mode = Column(String(20), nullable=True)  # "full" | "template" | "reuse" | "diff_patch"
+    generation_mode = Column(String(20), nullable=True)  # "full" | "template" | "reuse" | "diff_patch" | "adapted"
+    based_on_id = Column(Integer, nullable=True)  # ID of source presentation used for adaptation
+    similarity_score = Column(Float, nullable=True)  # 0.0-1.0 cosine similarity score
     is_active = Column(Boolean, nullable=False, default=True)
     uploaded_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, server_default=func.now())

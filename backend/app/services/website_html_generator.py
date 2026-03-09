@@ -70,18 +70,50 @@ def _analyse_template_brightness(image_path: str) -> str:
         return "dark"  # Default to dark assumption
 
 
+def _extract_slide_divs(webpage_path: str) -> str | None:
+    """Extract all slide <div> elements from an existing webpage.html.
+
+    Used by the adaptation path: we give Claude the existing slides as a
+    starting template so it can modify content rather than generate from scratch.
+    """
+    try:
+        from bs4 import BeautifulSoup
+
+        html = Path(webpage_path).read_text(encoding="utf-8")
+        soup = BeautifulSoup(html, "html.parser")
+
+        deck = soup.find("div", class_="deck") or soup.find("div", id="deck")
+        if not deck:
+            logger.warning("_extract_slide_divs: no .deck container in %s", webpage_path)
+            return None
+
+        slides = deck.find_all("div", class_="slide", recursive=False)
+        if not slides:
+            slides = deck.find_all("div", class_=re.compile(r"\bslide\b"))
+        if not slides:
+            logger.warning("_extract_slide_divs: no slides found in %s", webpage_path)
+            return None
+
+        return "\n".join(str(s) for s in slides)
+    except Exception as e:
+        logger.warning("_extract_slide_divs failed for %s: %s", webpage_path, e)
+        return None
+
+
 def generate_website_webpage(
     presentation_id: int,
     slides_json_path: str,
     media_dir: str,
     pres_dir: str,
     background_template_path: str | None = None,
+    similar_presentation_id: int | None = None,
+    similarity_score: float = 0.0,
 ) -> dict | None:
     """Generate an HTML slideshow from crawled website data using Claude API.
 
-    Uses a two-path strategy for token optimization:
-    - Path A (template): If any prior webpage.html exists, extract the static shell
-      and ask Claude to generate ONLY the slide <div> elements.  ~50-60% fewer tokens.
+    Uses a three-path strategy for token optimization:
+    - Path A0 (adapted): If a similar presentation exists, adapt its slides.
+    - Path A (template): If any prior webpage.html exists, generate slides only.
     - Path B (full): First-ever generation with no template — full HTML output.
 
     Returns a dict with 'webpage_path', 'token_usage', and 'generation_mode'.
@@ -129,6 +161,38 @@ def generate_website_webpage(
         template_shell = build_static_template(background_template_path, template_brightness)
         if not template_shell or "<!-- SLIDES_PLACEHOLDER -->" not in template_shell:
             template_shell = None
+
+    # PATH A0: Adaptation from any existing presentation (always preferred)
+    if similar_presentation_id and template_shell:
+        similar_pres_dir = os.path.join(
+            os.path.dirname(pres_dir), str(similar_presentation_id),
+        )
+        similar_webpage = os.path.join(similar_pres_dir, "webpage.html")
+        existing_slides_html = _extract_slide_divs(similar_webpage)
+
+        if existing_slides_html:
+            logger.info(
+                "Using ADAPTATION path for presentation %d from #%d (similarity=%.2f)",
+                presentation_id, similar_presentation_id, similarity_score,
+            )
+            adapted_template = apply_background_to_template(
+                template_shell, background_template_path, template_brightness,
+            )
+            result = _generate_adapted_slides(
+                presentation_id, slides, title, source_url, total_pages,
+                screenshot_url_map, media_dir, pres_dir,
+                background_template_path, template_brightness,
+                adapted_template, existing_slides_html, similarity_score,
+            )
+            if result:
+                result["generation_mode"] = "adapted"
+                result["based_on_id"] = similar_presentation_id
+                result["similarity_score"] = similarity_score
+                return result
+            logger.warning(
+                "Adaptation failed for presentation %d — falling through to standard path",
+                presentation_id,
+            )
 
     if template_shell:
         # PATH A: Template-based generation (slides only)
@@ -354,6 +418,322 @@ Use these URLs for page screenshots:
     logger.info(
         "Website webpage generated (TEMPLATE mode): %s (%d chars, tokens=%s)",
         webpage_path, len(html_content), token_usage,
+    )
+
+    return {
+        "webpage_path": webpage_path,
+        "token_usage": token_usage,
+    }
+
+
+def _build_content_summary(slides: list, screenshot_url_map: dict) -> str:
+    """Build a compact text summary of the new website content for adaptation.
+
+    Unlike the full prompt path which sends screenshots as base64 images,
+    this only sends structured text data — drastically reducing input tokens.
+    """
+    parts = []
+    for slide in slides:
+        slide_num = slide.get("slide_number") or slide.get("page_number", 0)
+        page_url = slide.get("page_url", "")
+        page_title = slide.get("page_title", f"Page {slide_num}")
+        content = slide.get("content", {})
+
+        parts.append(f"\n--- PAGE {slide_num}: {page_title} ---")
+        parts.append(f"URL: {page_url}")
+
+        screenshot_url = screenshot_url_map.get(f"page_{slide_num}", "")
+        if screenshot_url:
+            parts.append(f"Screenshot URL: {screenshot_url}")
+
+        if content.get("meta_description"):
+            parts.append(f"Description: {content['meta_description']}")
+
+        if content.get("sections"):
+            for section in content["sections"]:
+                heading = section.get("heading", "")
+                if heading:
+                    parts.append(f"  [{section.get('level', 'h2').upper()}] {heading}")
+                for text in section.get("content", []):
+                    parts.append(f"    - {text}")
+
+        if content.get("cards"):
+            parts.append(f"  CARDS ({len(content['cards'])}):")
+            for card in content["cards"]:
+                parts.append(f"    - {card}")
+
+        if content.get("list_items"):
+            parts.append("  LIST ITEMS:")
+            for item in content["list_items"]:
+                parts.append(f"    - {item}")
+
+        if content.get("key_paragraphs"):
+            for para in content["key_paragraphs"]:
+                parts.append(f"  {para}")
+
+        if content.get("hero_text"):
+            parts.append("  HERO TEXT:")
+            for hero in content["hero_text"]:
+                parts.append(f"    {hero}")
+
+        if content.get("images"):
+            parts.append(f"  IMAGES ({len(content['images'])}):")
+            for img in content["images"]:
+                name = img.get("name") or "(unnamed)"
+                role = img.get("role") or ""
+                src = img.get("src", "")
+                line = f"    - {name}"
+                if role:
+                    line += f" | {role}"
+                line += f" | {src}"
+                parts.append(line)
+
+    return "\n".join(parts)
+
+
+def _generate_adapted_slides(
+    presentation_id: int,
+    slides: list,
+    title: str,
+    source_url: str,
+    total_pages: int,
+    screenshot_url_map: dict,
+    media_dir: str,
+    pres_dir: str,
+    background_template_path: str | None,
+    template_brightness: str,
+    template_shell: str,
+    existing_slides_html: str,
+    source_similarity: float,
+) -> dict | None:
+    """Adapt existing slide HTML using a slot-filling approach (minimal tokens).
+
+    Instead of asking Claude for old→new text pairs (error-prone mapping), this:
+    1. Copies the existing HTML and replaces media URLs programmatically
+    2. Parses the DOM and numbers every text/image element as a "slot"
+    3. Asks Claude to fill each numbered slot with new website content
+    4. Applies fills directly on DOM elements (no string replacement)
+    5. Handles slide removal/addition
+    6. Injects into template shell
+
+    Key advantages over the old JSON-patch approach:
+    - No mapping errors: Claude fills slots IN ORDER, not by matching old→new
+    - No string-replace bugs: DOM manipulation targets exact elements
+    - Card-level consistency: consecutive H3+P+IMG slots are filled as a unit
+
+    Typical output: ~2-4K tokens (vs ~12K for full regeneration).
+    """
+    from app.services.html_template import inject_slides
+    from app.services.extraction.progress import is_cancelled
+    from bs4 import BeautifulSoup, NavigableString
+
+    api_key = settings.CLAUDE_API_KEY
+    CONTENT_TAGS = {"h1", "h2", "h3", "h4", "p", "li"}
+
+    # ── 1. Programmatic: replace media URLs (old pres ID → new) ──
+    adapted_html = re.sub(
+        r'/api/v1/media/\d+/',
+        f'/api/v1/media/{presentation_id}/',
+        existing_slides_html,
+    )
+
+    # ── 2. Parse into DOM and extract numbered content slots ──
+    soup = BeautifulSoup(f"<root>{adapted_html}</root>", "html.parser")
+    root_el = soup.find("root")
+    slide_divs = root_el.find_all("div", class_="slide", recursive=False)
+
+    # Each slot: (element_ref, "text"|"image", old_value)
+    slots: list[tuple] = []
+    slot_lines: list[str] = []
+
+    for slide_idx, slide_div in enumerate(slide_divs):
+        slide_header_added = False
+
+        def _add_slide_header(si=slide_idx):
+            nonlocal slide_header_added
+            if not slide_header_added:
+                slot_lines.append(f"\nSLIDE {si}:")
+                slide_header_added = True
+
+        # Text elements in document order
+        for el in slide_div.find_all(list(CONTENT_TAGS)):
+            # Skip nested content tags (e.g. <p> inside <li>) to avoid double-counting
+            parent = el.parent
+            is_nested = False
+            while parent and parent != slide_div:
+                if parent.name in CONTENT_TAGS:
+                    is_nested = True
+                    break
+                parent = parent.parent
+            if is_nested:
+                continue
+
+            text = el.get_text(strip=True)
+            if not text or len(text) <= 2:
+                continue
+
+            sid = len(slots)
+            slots.append((el, "text", text))
+            _add_slide_header()
+            slot_lines.append(f'  [{sid}] {el.name.upper()}: "{text}"')
+
+        # External image elements (skip internal /api/v1/media/ — already replaced)
+        for img_el in slide_div.find_all("img"):
+            src = img_el.get("src", "")
+            if not src or "/api/v1/media/" in src:
+                continue
+            sid = len(slots)
+            alt = img_el.get("alt", "")
+            slots.append((img_el, "image", src))
+            _add_slide_header()
+            slot_lines.append(f'  [{sid}] IMG: alt="{alt}" src="{src}"')
+
+    if not slots:
+        logger.warning("No content slots found in existing slides — cannot adapt")
+        return None
+
+    # ── 3. Build new website content summary ──
+    content_summary = _build_content_summary(slides, screenshot_url_map)
+    slot_desc = "\n".join(slot_lines)
+    total_slots = len(slots)
+
+    # ── 4. Prompt: ask Claude to fill each numbered slot ──
+    prompt = f"""You are filling content slots in a website presentation template.
+The template was built for a DIFFERENT website. You MUST replace ALL slot values with content from the NEW website below.
+
+NUMBERED CONTENT SLOTS (from the existing template — every one must be updated):
+{slot_desc}
+
+NEW WEBSITE DATA (use ONLY this data to fill the slots):
+Title: "{title}"
+Source: {source_url}
+{content_summary}
+
+Output ONLY this JSON (start with {{, no markdown fencing):
+{{
+  "fills": {{
+    "0": "new value",
+    "1": "new value",
+    ...for all {total_slots} slots (0 to {total_slots - 1})
+  }},
+  "remove_slides": [],
+  "new_slides_html": []
+}}
+
+RULES:
+1. Provide a fill for EVERY slot (0 through {total_slots - 1}). Leave NOTHING from the old website.
+2. Consecutive H3 + P slots = one card. Fill H3 with an item name and P with that SAME item's description.
+3. H2 slots = category/section headings. Use the new website's section/category names.
+4. H1 slots = main title. Use "{title}".
+5. IMG slots = provide an image URL from the new website that matches the adjacent text content.
+6. Fill slots IN ORDER using the new website's content in its natural order (categories, then items within each category).
+7. remove_slides: 0-based slide indices to drop if new content has fewer items than slots.
+8. new_slides_html: extra <div class="slide"><div class="zoom-wrapper">...</div></div> HTML if the new website has more items. Copy the visual style of existing slides.
+9. Start with {{ — no other output."""
+
+    if is_cancelled(presentation_id):
+        return None
+
+    logger.info(
+        "Calling Claude API (SLOT-FILL mode, model=%s, pages=%d, similarity=%.2f, "
+        "slots=%d, slides=%d)...",
+        settings.CLAUDE_MODEL, total_pages, source_similarity, total_slots, len(slide_divs),
+    )
+
+    # ── 5. Call Claude API (non-streaming — compact JSON output expected) ──
+    try:
+        client = anthropic.Anthropic(api_key=api_key)
+        response = client.messages.create(
+            model=settings.CLAUDE_MODEL,
+            max_tokens=16000,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        raw = response.content[0].text
+        token_usage = {
+            "input_tokens": response.usage.input_tokens,
+            "output_tokens": response.usage.output_tokens,
+        }
+    except Exception as e:
+        logger.error("Claude API call failed (slot-fill): %s", e)
+        return None
+
+    logger.info("Slot-fill response: %d chars, tokens=%s", len(raw), token_usage)
+
+    # ── 6. Parse JSON response ──
+    json_str = raw.strip()
+    if json_str.startswith("```"):
+        lines = json_str.split("\n")
+        lines = lines[1:] if lines[0].startswith("```") else lines
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        json_str = "\n".join(lines)
+
+    try:
+        patch = json.loads(json_str)
+    except json.JSONDecodeError:
+        m = re.search(r"\{[\s\S]*\}", json_str)
+        if m:
+            try:
+                patch = json.loads(m.group())
+            except json.JSONDecodeError as e2:
+                logger.error("Cannot parse slot-fill JSON: %s — raw[:500]=%s", e2, raw[:500])
+                return None
+        else:
+            logger.error("No JSON in slot-fill response — raw[:500]=%s", raw[:500])
+            return None
+
+    # ── 7. Apply fills via DOM manipulation (no string replacement) ──
+    fills = patch.get("fills", {})
+    applied = 0
+
+    for slot_id_str, new_value in fills.items():
+        try:
+            sid = int(slot_id_str)
+        except (ValueError, TypeError):
+            continue
+        if sid < 0 or sid >= total_slots:
+            continue
+
+        element, slot_type, old_value = slots[sid]
+        if not new_value:
+            continue
+
+        new_str = str(new_value)
+        if slot_type == "text" and new_str != old_value:
+            element.clear()
+            element.append(NavigableString(new_str))
+            applied += 1
+        elif slot_type == "image" and new_str != old_value:
+            element["src"] = new_str
+            applied += 1
+
+    logger.info("Applied %d/%d slot fills", applied, total_slots)
+
+    # ── 8. Remove slides if needed ──
+    to_remove = sorted(patch.get("remove_slides", []), reverse=True)
+    for idx in to_remove:
+        if 0 <= idx < len(slide_divs):
+            slide_divs[idx].decompose()
+            logger.info("Removed slide %d", idx)
+
+    # ── 9. Serialize adapted HTML ──
+    adapted_html = "".join(str(c) for c in root_el.children)
+
+    # ── 10. Append new slides if any ──
+    for ns in patch.get("new_slides_html", []):
+        if ns and "slide" in ns:
+            adapted_html += "\n" + ns.strip()
+
+    # ── 11. Inject into template shell & save ──
+    html_content = inject_slides(template_shell, adapted_html)
+
+    webpage_path = os.path.join(pres_dir, "webpage.html")
+    with open(webpage_path, "w", encoding="utf-8") as f:
+        f.write(html_content)
+
+    logger.info(
+        "Webpage generated (SLOT-FILL): %s (%d chars, %d/%d fills applied, tokens=%s)",
+        webpage_path, len(html_content), applied, total_slots, token_usage,
     )
 
     return {
@@ -799,6 +1179,7 @@ to create a comprehensive presentation. Break each page into multiple slides.
         bg_image_css = (
             f'/* Force background template image on every slide */\n'
             f'.slide{{\n'
+            f'  background:none !important;\n'
             f"  background-image:{overlay},url('/api/v1/admin/background-templates/{bg_name_css}') !important;\n"
             f'  background-size:cover,cover !important;\n'
             f'  background-position:center center !important;\n'
@@ -815,7 +1196,7 @@ to create a comprehensive presentation. Break each page into multiple slides.
         '.gradient-text{-webkit-text-fill-color:transparent !important;'
         'background-clip:text !important;}\n'
         '/* === STRICT SLIDE CONTAINMENT — ZERO OVERFLOW === */\n'
-        '.slide,.slide-container,[class*="slide"]:not(.slide-counter):not(.slide-nav){\n'
+        '.slide,.slide-container{\n'
         '  overflow:hidden !important;\n'
         '  max-height:100vh !important;\n'
         '  height:100vh !important;\n'

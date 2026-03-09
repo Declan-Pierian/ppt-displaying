@@ -15,6 +15,8 @@ class PresentationResponse(BaseModel):
     error_message: str | None = None
     source_url: str | None = None
     generation_mode: str | None = None
+    based_on_id: int | None = None
+    similarity_score: float | None = None
     created_at: datetime
     updated_at: datetime | None = None
 

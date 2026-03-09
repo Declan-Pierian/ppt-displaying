@@ -210,6 +210,7 @@ def apply_background_to_template(
     new_bg_rule = (
         f'/* Force background template */\n'
         f'.slide{{\n'
+        f'  background:none !important;\n'
         f"  background-image:{overlay},url('/api/v1/admin/background-templates/{bg_name}') !important;\n"
         f'  background-size:cover,cover !important;\n'
         f'  background-position:center center !important;\n'
@@ -291,6 +292,7 @@ def _build_safety_css(
         bg_image_css = (
             f'/* Force background template */\n'
             f'.slide{{\n'
+            f'  background:none !important;\n'
             f"  background-image:{overlay},url('/api/v1/admin/background-templates/{bg_name}') !important;\n"
             f'  background-size:cover,cover !important;\n'
             f'  background-position:center center !important;\n'
@@ -307,7 +309,7 @@ def _build_safety_css(
         '.gradient-text{-webkit-text-fill-color:transparent !important;'
         'background-clip:text !important;}\n'
         '/* === STRICT SLIDE CONTAINMENT === */\n'
-        '.slide,.slide-container,[class*="slide"]:not(.slide-counter):not(.slide-nav){\n'
+        '.slide,.slide-container{\n'
         '  overflow:hidden !important;max-height:100vh !important;height:100vh !important;\n'
         '  width:100vw !important;position:absolute !important;box-sizing:border-box !important;\n'
         '}\n'

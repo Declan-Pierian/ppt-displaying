@@ -127,6 +127,11 @@ export default function PresentationsPage() {
                         <st.Icon size={12} /> {pres.status}
                       </span>
                       {!pres.is_active && <span className="badge-neutral badge">Hidden</span>}
+                      {pres.generation_mode === "adapted" && pres.similarity_score != null && (
+                        <span className="badge" style={{ background: "#ecfdf5", color: "#059669", fontSize: 10 }}>
+                          Adapted ({Math.round(pres.similarity_score * 100)}%)
+                        </span>
+                      )}
                     </div>
                     <p className="pres-meta" style={{ display: "flex", alignItems: "center", gap: 6 }}>
                       {pres.source_url ? (
@@ -135,6 +140,11 @@ export default function PresentationsPage() {
                         <FileType size={13} style={{ flexShrink: 0, color: "#6366f1" }} />
                       )}
                       {pres.source_url || pres.original_filename} &middot; {pres.slide_count} {pres.source_url ? "pages" : "slides"} &middot; {formatDate(pres.created_at)}
+                      {pres.based_on_id && (
+                        <span style={{ color: "var(--c-text-muted)", fontSize: 11 }}>
+                          &middot; from #{pres.based_on_id}
+                        </span>
+                      )}
                     </p>
                     {pres.error_message && (
                       <p style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8, fontSize: 13, color: "var(--c-error)" }}>
