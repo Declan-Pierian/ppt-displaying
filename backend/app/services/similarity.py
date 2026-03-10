@@ -124,9 +124,9 @@ def find_most_similar_presentation(
 ) -> tuple[int, str, float] | None:
     """Search the DB for the most similar existing website presentation.
 
-    Always returns the best match if ANY website presentation exists in the DB,
-    regardless of similarity score.  Even a completely unrelated presentation
-    provides a valid HTML structure for Claude to adapt (swap content/images).
+    Only returns a match if the similarity score meets ``SIMILARITY_THRESHOLD``
+    (currently 0.15).  Unrelated presentations are NOT returned — adaptation
+    only makes sense when the websites share meaningful content overlap.
 
     Parameters
     ----------
@@ -139,8 +139,8 @@ def find_most_similar_presentation(
 
     Returns
     -------
-    (presentation_id, source_url, similarity_score) if any website presentation
-    exists, otherwise ``None``.
+    (presentation_id, source_url, similarity_score) if a sufficiently similar
+    presentation is found, otherwise ``None``.
     """
     from app.models.presentation import Presentation
 
@@ -186,11 +186,16 @@ def find_most_similar_presentation(
             best_id = pres.id
             best_url = pres.source_url or ""
 
-    if best_id is not None:
+    if best_id is not None and best_score >= SIMILARITY_THRESHOLD:
         logger.info(
             "Best match for adaptation: presentation #%d (%s) — similarity %.2f",
             best_id, best_url, best_score,
         )
         return best_id, best_url, best_score
 
+    if best_id is not None:
+        logger.info(
+            "Best match #%d has similarity %.2f (below threshold %.2f) — skipping adaptation",
+            best_id, best_score, SIMILARITY_THRESHOLD,
+        )
     return None

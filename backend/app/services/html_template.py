@@ -200,6 +200,7 @@ def apply_background_to_template(
         return template
 
     bg_name = os.path.basename(background_template_path)
+    bg_mtime = int(os.path.getmtime(background_template_path))
 
     # Build the new background CSS rule
     if template_brightness == "light":
@@ -210,11 +211,12 @@ def apply_background_to_template(
     new_bg_rule = (
         f'/* Force background template */\n'
         f'.slide{{\n'
-        f'  background:none !important;\n'
-        f"  background-image:{overlay},url('/api/v1/admin/background-templates/{bg_name}') !important;\n"
-        f'  background-size:cover,cover !important;\n'
-        f'  background-position:center center !important;\n'
-        f'  background-repeat:no-repeat !important;\n'
+        f'  background-color:transparent !important;\n'
+        f"  background-image:{overlay},url('/api/v1/admin/background-templates/{bg_name}?v={bg_mtime}') !important;\n"
+        f'  background-size:100% 100%,100% 100% !important;\n'
+        f'  background-position:0 0,0 0 !important;\n'
+        f'  background-repeat:no-repeat,no-repeat !important;\n'
+        f'  background-attachment:scroll,scroll !important;\n'
         f'}}\n'
     )
 
@@ -285,6 +287,7 @@ def _build_safety_css(
     bg_image_css = ""
     if background_template_path and os.path.exists(background_template_path):
         bg_name = os.path.basename(background_template_path)
+        bg_mtime = int(os.path.getmtime(background_template_path))
         if template_brightness == "light":
             overlay = "linear-gradient(rgba(255,255,255,0.15),rgba(255,255,255,0.15))"
         else:
@@ -292,11 +295,12 @@ def _build_safety_css(
         bg_image_css = (
             f'/* Force background template */\n'
             f'.slide{{\n'
-            f'  background:none !important;\n'
-            f"  background-image:{overlay},url('/api/v1/admin/background-templates/{bg_name}') !important;\n"
-            f'  background-size:cover,cover !important;\n'
-            f'  background-position:center center !important;\n'
-            f'  background-repeat:no-repeat !important;\n'
+            f'  background-color:transparent !important;\n'
+            f"  background-image:{overlay},url('/api/v1/admin/background-templates/{bg_name}?v={bg_mtime}') !important;\n"
+            f'  background-size:100% 100%,100% 100% !important;\n'
+            f'  background-position:0 0,0 0 !important;\n'
+            f'  background-repeat:no-repeat,no-repeat !important;\n'
+            f'  background-attachment:scroll,scroll !important;\n'
             f'}}\n'
         )
 
@@ -304,7 +308,10 @@ def _build_safety_css(
         '\n<style id="safety-overrides">\n'
         + text_color_rule
         + bg_image_css
-        + '.tag,.pill,.badge,.kpi-label,.metric-mini .label,.chart-bar span'
+        + '/* Reset backgrounds on containers to prevent double-rendering */\n'
+        'body,.deck,.slide-container,.slide-wrapper{background:transparent !important;background-image:none !important;}\n'
+        '.zoom-wrapper,.slide-content,.slide>[class*="content"],.slide>[class*="wrapper"]{background:transparent !important;background-image:none !important;}\n'
+        '.tag,.pill,.badge,.kpi-label,.metric-mini .label,.chart-bar span'
         '{color:inherit !important;}\n'
         '.gradient-text{-webkit-text-fill-color:transparent !important;'
         'background-clip:text !important;}\n'

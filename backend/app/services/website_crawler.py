@@ -22,6 +22,31 @@ from urllib.parse import urlparse, urljoin
 logger = logging.getLogger(__name__)
 
 
+# JavaScript to mark hidden elements so BeautifulSoup can skip them.
+# This catches WordPress filter plugins, CSS-hidden members, etc.
+_MARK_HIDDEN_JS = """
+() => {
+    // Walk every element and check computed visibility
+    const allEls = document.querySelectorAll('*');
+    for (const el of allEls) {
+        try {
+            const cs = window.getComputedStyle(el);
+            if (cs.display === 'none' || cs.visibility === 'hidden' ||
+                cs.opacity === '0' || cs.clipPath === 'inset(100%)') {
+                el.setAttribute('data-crawler-hidden', 'true');
+            }
+        } catch(e) {}
+    }
+    // Also mark children of hidden parents (belt-and-suspenders)
+    document.querySelectorAll('[data-crawler-hidden]').forEach(parent => {
+        parent.querySelectorAll('*').forEach(child => {
+            child.setAttribute('data-crawler-hidden', 'true');
+        });
+    });
+}
+"""
+
+
 def _normalise_url(url: str) -> str:
     """Strip fragment and trailing slash for dedup. Keep query params."""
     parsed = urlparse(url)
@@ -93,8 +118,55 @@ def _extract_page_content(html: str, page_url: str = "") -> dict:
     for tag in soup.find_all(["script", "style", "noscript", "svg"]):
         tag.decompose()
 
+    # Remove elements marked as hidden by Playwright visibility check
+    for tag in soup.find_all(attrs={"data-crawler-hidden": "true"}):
+        tag.decompose()
+
     title_tag = soup.find("title")
     title = title_tag.get_text(strip=True) if title_tag else ""
+
+    # ── Extract site logo BEFORE stripping header ──
+    site_logo_url = ""
+    for header in soup.find_all("header"):
+        for img in header.find_all("img"):
+            img_cls = " ".join(img.get("class", []))
+            img_alt = (img.get("alt") or "").lower()
+            img_src = img.get("src", "")
+            # Match logo by class, alt text, or filename
+            if (re.search(r'logo', img_cls, re.I) or
+                    re.search(r'logo', img_alt) or
+                    re.search(r'logo', img_src, re.I)):
+                if img_src and not img_src.startswith("data:"):
+                    if page_url and not img_src.startswith(("http://", "https://")):
+                        img_src = urljoin(page_url, img_src)
+                    site_logo_url = img_src
+                    break
+        if site_logo_url:
+            break
+
+    # ── Strip navigation, header menus, and footer to avoid mega-menu
+    # headings leaking into content sections ──
+    # Save nav items BEFORE decomposing nav elements
+    _nav_items_raw = []
+    for nav in soup.find_all(["nav"]):
+        for a in nav.find_all("a"):
+            label = a.get_text(strip=True)
+            if label and 2 < len(label) < 50:
+                _nav_items_raw.append(label)
+        nav.decompose()
+    # Also strip footer (case studies, articles, etc.)
+    for footer in soup.find_all("footer"):
+        footer.decompose()
+    # Strip header nav menus but preserve page hero content
+    for header in soup.find_all("header"):
+        # Keep if it contains a hero-like element, otherwise decompose
+        hero = header.find(class_=re.compile(r'hero|banner|jumbotron', re.I))
+        if not hero:
+            for a in header.find_all("a"):
+                label = a.get_text(strip=True)
+                if label and 2 < len(label) < 50:
+                    _nav_items_raw.append(label)
+            header.decompose()
 
     meta_desc = ""
     meta = soup.find("meta", attrs={"name": "description"})
@@ -139,13 +211,8 @@ def _extract_page_content(html: str, page_url: str = "") -> dict:
             if len(key_paragraphs) >= 15:
                 break
 
-    # Navigation links
-    nav_items = []
-    for nav in soup.find_all(["nav", "header"]):
-        for a in nav.find_all("a"):
-            label = a.get_text(strip=True)
-            if label and 2 < len(label) < 50:
-                nav_items.append(label)
+    # Navigation links (collected before nav/header were decomposed)
+    nav_items = _nav_items_raw
 
     # Cards / feature items (common in product pages)
     cards = []
@@ -334,6 +401,25 @@ def _extract_page_content(html: str, page_url: str = "") -> dict:
         if not assoc_text["name"] and alt:
             assoc_text["name"] = alt
 
+        # Fallback: extract name from image filename (e.g. "00Chetan-Venugopal.jpg")
+        if not assoc_text["name"] and src:
+            fname = src.rsplit("/", 1)[-1].rsplit(".", 1)[0]  # "00Chetan-Venugopal"
+            # Strip leading digits and common prefixes
+            fname = re.sub(r'^[0-9]+', '', fname)
+            # Strip WordPress hash suffixes like "-e1731309660647" or "-300x78"
+            fname = re.sub(r'-e\d{8,}$', '', fname)
+            fname = re.sub(r'-\d+x\d+$', '', fname)
+            # Strip trailing _1, _2 etc.
+            fname = re.sub(r'[_]\d+$', '', fname)
+            # Replace hyphens/underscores with spaces
+            fname = re.sub(r'[-_]+', ' ', fname).strip()
+            # Only use if it looks like a name (2+ chars, not too long)
+            if fname and 3 < len(fname) < 60:
+                # Skip if it looks like a generic image name
+                generic = re.search(r'banner|logo|icon|menu|image|thumb|bg|background|header|footer', fname, re.I)
+                if not generic:
+                    assoc_text["name"] = fname.title()
+
         images.append({
             "src": src,
             "alt": alt,
@@ -375,7 +461,7 @@ def _extract_page_content(html: str, page_url: str = "") -> dict:
                 "description": assoc_text["description"],
             })
 
-    return {
+    result = {
         "title": title,
         "meta_description": meta_desc,
         "sections": sections,
@@ -386,6 +472,9 @@ def _extract_page_content(html: str, page_url: str = "") -> dict:
         "hero_text": hero_text[:5],
         "images": images,
     }
+    if site_logo_url:
+        result["site_logo_url"] = site_logo_url
+    return result
 
 
 def _try_fetch_sitemap(page, base_url: str) -> list[str]:
@@ -557,7 +646,13 @@ def _crawl_one_page(url: str, presentation_id: int, media_dir: str) -> dict:
         )
         page = context.new_page()
 
-        page.goto(url, wait_until="networkidle", timeout=30000)
+        try:
+            page.goto(url, wait_until="networkidle", timeout=30000)
+        except Exception:
+            # Fallback: some sites never reach networkidle (heavy JS/analytics)
+            print("WARN:networkidle timed out, retrying with domcontentloaded",
+                  file=sys.stderr, flush=True)
+            page.goto(url, wait_until="domcontentloaded", timeout=30000)
         page.wait_for_timeout(2000)
 
         # Scroll through the entire page to trigger lazy-loaded images/content
@@ -575,6 +670,9 @@ def _crawl_one_page(url: str, presentation_id: int, media_dir: str) -> dict:
             }
         """)
         page.wait_for_timeout(2000)  # Wait for lazy images to load after scrolling
+
+        # Mark hidden elements before extracting content
+        page.evaluate(_MARK_HIDDEN_JS)
 
         # Screenshot
         screenshot_path = os.path.join(screenshots_dir, "page_1.png")
@@ -702,12 +800,18 @@ def _crawl_impl(
             visited.add(norm)
 
             try:
-                page.goto(page_url, wait_until="networkidle", timeout=30000)
+                try:
+                    page.goto(page_url, wait_until="networkidle", timeout=30000)
+                except Exception:
+                    page.goto(page_url, wait_until="domcontentloaded", timeout=30000)
                 page.wait_for_timeout(2000)  # Let JS fully render
 
                 # Discover more links from this page
                 new_links = _discover_links_aggressive(page, base_url, visited, known)
                 urls_to_visit.extend(new_links)
+
+                # Mark hidden elements before extracting content
+                page.evaluate(_MARK_HIDDEN_JS)
 
                 # Screenshot (viewport only, not full page)
                 screenshot_filename = f"page_{idx + 1}.png"
@@ -751,8 +855,14 @@ def _crawl_impl(
                 visited.add(norm)
 
                 try:
-                    page.goto(common_url, wait_until="networkidle", timeout=20000)
+                    try:
+                        page.goto(common_url, wait_until="networkidle", timeout=20000)
+                    except Exception:
+                        page.goto(common_url, wait_until="domcontentloaded", timeout=20000)
                     page.wait_for_timeout(1500)
+
+                    # Mark hidden elements
+                    page.evaluate(_MARK_HIDDEN_JS)
 
                     screenshot_filename = f"page_{idx + 1}.png"
                     screenshot_path = os.path.join(screenshots_dir, screenshot_filename)

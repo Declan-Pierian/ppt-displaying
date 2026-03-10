@@ -162,8 +162,8 @@ def generate_website_webpage(
         if not template_shell or "<!-- SLIDES_PLACEHOLDER -->" not in template_shell:
             template_shell = None
 
-    # PATH A0: Adaptation from any existing presentation (always preferred)
-    if similar_presentation_id and template_shell:
+    # PATH A0: Adaptation from a sufficiently similar existing presentation
+    if similar_presentation_id and template_shell and similarity_score >= 0.15:
         similar_pres_dir = os.path.join(
             os.path.dirname(pres_dir), str(similar_presentation_id),
         )
@@ -266,9 +266,10 @@ def _generate_slides_only(
                 "Cards: rgba(30,41,59,0.8) with backdrop-filter blur."
             )
         bg_template_instruction = f"""
-## Background Template
-Use `background-size: cover` to fill the slide. Background URL: /api/v1/admin/background-templates/{bg_name}
-Use separate CSS properties: background-image, background-size, background-position (NOT the shorthand `background:`).
+## Background Template — HANDLED AUTOMATICALLY
+A background template image will be applied automatically via post-processing CSS.
+**DO NOT add ANY background-image, background-color, or background CSS to .slide elements or inline styles.**
+Leave slide backgrounds transparent/unset — the system handles it.
 {contrast_instruction}
 """
 
@@ -298,9 +299,12 @@ Use separate CSS properties: background-image, background-size, background-posit
 
 ## Website Images — EVERY image MUST appear with its NAME displayed!
 **CRITICAL IMAGE RULES:**
-1. EVERY provided image MUST appear in the presentation
+1. EVERY provided image MUST appear in the presentation — create as many slides as needed
 2. NAME must be visible below every image — MANDATORY
-3. For people/team photos, use:
+3. NEVER invent or hallucinate image URLs — ONLY use URLs provided in the crawled data below
+4. NEVER add placeholder images or broken image references. NEVER use a webpage URL as an image src.
+4b. For logos: ONLY use a logo URL if one is explicitly provided. Do NOT use the website URL as an img src.
+5. For people/team photos, use:
 ```html
 <div class="person-card">
   <img class="team-photo" src="IMAGE_URL" alt="NAME" style="width:120px;height:120px;border-radius:50%;object-fit:cover;">
@@ -308,8 +312,10 @@ Use separate CSS properties: background-image, background-size, background-posit
   <div class="person-role">ROLE/TITLE</div>
 </div>
 ```
-4. Wrap person cards in: <div class="team-grid">...</div>
-5. MAX 6-8 people per slide — create MULTIPLE team slides if needed
+6. Wrap person cards in: <div class="team-grid">...</div>
+7. MAX 6-8 people per slide — create MULTIPLE team slides for more people
+8. NEVER add fake pagination text like "Showing X of Y" or "Page X of Y" — show ALL people across multiple slides
+9. NEVER use placeholder/lorem-ipsum text for descriptions — if no description exists, omit it
 
 ## Screenshots
 Use these URLs for page screenshots:
@@ -355,7 +361,10 @@ Use these URLs for page screenshots:
             "No DOCTYPE, no <html>, no <head>, no <style>, no <script>."
             f"{bg_reminder}\n"
             "ALL provided images MUST appear with their NAME visible. "
-            "Missing names = CRITICAL BUG. Use class='person-card' and class='team-grid'."
+            "Missing names = CRITICAL BUG. Use class='person-card' and class='team-grid'.\n"
+            "NEVER invent image URLs — ONLY use the exact URLs provided in the data above.\n"
+            "NEVER add fake pagination like 'Showing X of Y' or 'Page X of Y'.\n"
+            "Include ALL people/team members across multiple slides — do NOT summarize or truncate."
         ),
     })
 
@@ -477,13 +486,18 @@ def _build_content_summary(slides: list, screenshot_url_map: dict) -> str:
                 parts.append(f"    {hero}")
 
         if content.get("images"):
-            parts.append(f"  IMAGES ({len(content['images'])}):")
-            for img in content["images"]:
-                name = img.get("name") or "(unnamed)"
+            # Filter: skip unnamed images and nav/service images
+            filtered_imgs = [
+                img for img in content["images"]
+                if img.get("name") or img.get("alt")
+            ]
+            parts.append(f"  IMAGES ({len(filtered_imgs)}):")
+            for img in filtered_imgs:
+                name = img.get("name") or img.get("alt") or "(unnamed)"
                 role = img.get("role") or ""
                 src = img.get("src", "")
                 line = f"    - {name}"
-                if role:
+                if role and role.lower() != name.lower():
                     line += f" | {role}"
                 line += f" | {src}"
                 parts.append(line)
@@ -834,6 +848,9 @@ def _append_page_content_blocks(
         if screenshot_url:
             page_info += f"\nScreenshot <img> URL: {screenshot_url}"
 
+        if content.get("site_logo_url"):
+            page_info += f"\nSite Logo URL: {content['site_logo_url']}"
+
         if content.get("meta_description"):
             page_info += f"\nDescription: {content['meta_description']}"
 
@@ -860,24 +877,69 @@ def _append_page_content_blocks(
                 page_info += f"\n  {para}"
 
         if content.get("images"):
-            img_count = len(content["images"])
-            named_imgs = [img for img in content["images"] if img.get("name")]
+            # Filter: skip images with no name, no alt, and no description
+            filtered_images = [
+                img for img in content["images"]
+                if img.get("name") or img.get("alt")
+            ]
+            # Separate people images (have personal names) from generic images
+            # People images: name looks like a person name (2+ words, no generic service terms)
+            _service_keywords = {
+                "services", "solutions", "advisory", "audit", "compliance",
+                "management", "enablement", "analytics", "automation",
+                "practice", "accounting", "digital", "risk", "consulting",
+                "transformation", "menu", "banner", "logo", "icon",
+            }
+            people_images = []
+            other_images = []
+            for img in filtered_images:
+                name = (img.get("name") or img.get("alt") or "").strip()
+                name_lower = name.lower()
+                # Skip images where name == role (likely a service/nav image, not a person)
+                role = (img.get("role") or "").strip()
+                if name and role and name.lower() == role.lower():
+                    other_images.append(img)
+                    continue
+                # Skip if name contains service keywords (nav/menu images)
+                if any(kw in name_lower for kw in _service_keywords):
+                    other_images.append(img)
+                    continue
+                # Likely a person if name has 2+ words and no service keywords
+                words = name.split()
+                if len(words) >= 2 and not any(kw in name_lower for kw in _service_keywords):
+                    people_images.append(img)
+                else:
+                    other_images.append(img)
+
+            img_count = len(filtered_images)
             page_info += f"\n\n{'='*40}"
-            page_info += f"\nIMAGES FOUND: {img_count} total ({len(named_imgs)} with names)"
-            page_info += f"\nYou MUST include ALL {img_count} images with their NAME displayed!"
-            if img_count > 8:
-                slides_needed = (img_count + 7) // 8
+
+            if people_images:
+                page_info += f"\nPEOPLE/TEAM MEMBERS: {len(people_images)} found"
+                page_info += f"\nYou MUST include ALL {len(people_images)} team members!"
+                slides_needed = (len(people_images) + 5) // 6
                 page_info += f"\nCreate {slides_needed}+ team slides (max 6-8 per slide)"
-            page_info += f"\n{'='*40}"
-            for i, img in enumerate(content["images"], 1):
-                page_info += f"\n  [{i}/{img_count}] IMAGE:"
-                page_info += f"\n    URL: {img['src']}"
-                page_info += f"\n    NAME: {img.get('name') or '(unnamed)'}"
-                page_info += f"\n    ROLE: {img.get('role') or '(no role)'}"
-                if img.get("alt"):
-                    page_info += f"\n    ALT: {img['alt']}"
-                if img.get("description"):
-                    page_info += f"\n    INFO: {img['description']}"
+                page_info += f"\nNEVER add fake pagination — show ALL people across multiple slides"
+                page_info += f"\n{'='*40}"
+                for i, img in enumerate(people_images, 1):
+                    page_info += f"\n  [PERSON {i}/{len(people_images)}]"
+                    page_info += f"\n    URL: {img['src']}"
+                    page_info += f"\n    NAME: {img.get('name') or img.get('alt') or '(unnamed)'}"
+                    page_info += f"\n    ROLE: {img.get('role') or '(no role)'}"
+                    if img.get("description"):
+                        page_info += f"\n    INFO: {img['description']}"
+
+            if other_images:
+                page_info += f"\n\nOTHER IMAGES: {len(other_images)} found"
+                for i, img in enumerate(other_images, 1):
+                    name = img.get("name") or img.get("alt") or "(unnamed)"
+                    page_info += f"\n  [IMG {i}/{len(other_images)}]"
+                    page_info += f"\n    URL: {img['src']}"
+                    page_info += f"\n    NAME: {name}"
+                    if img.get("role"):
+                        page_info += f"\n    ROLE: {img['role']}"
+                    if img.get("description"):
+                        page_info += f"\n    INFO: {img['description']}"
 
         if content.get("nav_items"):
             page_info += f"\n\nNavigation: {', '.join(content['nav_items'][:10])}"
@@ -936,28 +998,13 @@ def _generate_full_html(
             overlay_css = "linear-gradient(rgba(15,23,42,0.35), rgba(15,23,42,0.45))"
 
         bg_template_instruction = f"""
-## Background Template — MANDATORY
-The user has selected a specific background template image: "{bg_name}"
-**YOU MUST use this ACTUAL IMAGE as the CSS background-image on EVERY .slide element.**
-This is NOT optional. Do NOT recreate it with gradients. Do NOT use a solid color instead.
-
-**REQUIRED CSS for EVERY .slide:**
-```css
-.slide {{
-  background-image: {overlay_css}, url('/api/v1/admin/background-templates/{bg_name}') !important;
-  background-size: cover, cover !important;
-  background-position: center center !important;
-  background-repeat: no-repeat !important;
-}}
-```
-
-- The image URL is: /api/v1/admin/background-templates/{bg_name}
-- Apply this to every single .slide element — no exceptions
-- CRITICAL: Use `background-size: cover` so the template fills the entire slide without gaps
-- Use separate `background-image`, `background-size`, `background-position` properties (NOT the shorthand `background:`)
-- Add a subtle semi-transparent overlay on top for text readability
-- The overlay should be thin enough that the background image is clearly visible through it
-- Do NOT use solid color backgrounds — the actual template image must be visible on every slide
+## Background Template — HANDLED AUTOMATICALLY
+A background template image ("{bg_name}") will be applied automatically via post-processing CSS.
+**DO NOT add ANY background-image, background-color, or background CSS to .slide elements.**
+**DO NOT add inline style="background..." on any .slide div.**
+**DO NOT set backgrounds on body, .deck, .slide-container, or any wrapper element.**
+The system will inject the correct background styling after generation.
+Just focus on content, layout, and text styling — leave ALL backgrounds transparent/unset.
 {contrast_instruction}
 """
 
@@ -1008,7 +1055,10 @@ The images are ALREADY MAPPED to the correct person/item — **you MUST use each
 1. **EVERY provided image MUST appear in the presentation** — do NOT skip any images
 2. Each image entry includes: URL, NAME, ROLE/TITLE — you MUST display ALL THREE
 3. **NAME must be visible below every image** — this is MANDATORY, not optional
-4. For people/team photos, use this EXACT HTML structure for each person:
+4. **NEVER invent or hallucinate image URLs** — ONLY use the exact URLs provided in the crawled data below
+5. **NEVER add placeholder images or broken image references. NEVER use a webpage URL as an image src.**
+5b. For logos: ONLY use a logo URL if one is explicitly provided. Do NOT use the website URL as an img src.
+6. For people/team photos, use this EXACT HTML structure for each person:
 ```html
 <div class="person-card">
   <img class="team-photo" src="IMAGE_URL" alt="NAME" style="width:120px;height:120px;border-radius:50%;object-fit:cover;">
@@ -1016,17 +1066,18 @@ The images are ALREADY MAPPED to the correct person/item — **you MUST use each
   <div class="person-role">ROLE/TITLE</div>
 </div>
 ```
-5. Wrap all person cards in a grid container:
+7. Wrap all person cards in a grid container:
 ```html
 <div class="team-grid">
   <!-- person-card elements here -->
 </div>
 ```
-6. **MAX 6-8 people per slide** — if there are more, create MULTIPLE team slides (e.g., "Our Team (1/3)", "Our Team (2/3)", etc.)
-7. **ALL images must be included** — split across as many slides as needed
-8. For product/feature images: use rectangular with rounded corners (border-radius: 12px; object-fit: cover;)
-9. Use the EXACT image URLs provided — they are absolute URLs from the original website
-10. For two-column layouts with screenshots, add class="two-col" to the flex container
+8. **MAX 6-8 people per slide** — if there are more, create MULTIPLE team slides (e.g., "Our Team (1/3)", "Our Team (2/3)", etc.)
+9. **ALL images must be included** — split across as many slides as needed. NEVER add fake pagination like "Showing X of Y" or "Page X of Y"
+10. For product/feature images: use rectangular with rounded corners (border-radius: 12px; object-fit: cover;)
+11. Use the EXACT image URLs provided — they are absolute URLs from the original website
+12. For two-column layouts with screenshots, add class="two-col" to the flex container
+13. **NEVER use placeholder/lorem-ipsum text** — if no description exists for a person, omit the description
 
 ## Screenshots — STRICT SIZING (images must NEVER exceed boundaries)
 Use these EXACT URLs for page screenshots in <img> tags:
@@ -1138,7 +1189,10 @@ to create a comprehensive presentation. Break each page into multiple slides.
             "7. TWO-COLUMN layouts: add class='two-col' to the flex container. Text column 55%, image column 38%, gap 40px.\n"
             "8. **ALL provided images MUST appear with their NAME visible below the photo.** Missing names = CRITICAL BUG.\n"
             "9. Use class='person-card' for each team member, class='team-grid' for the grid container.\n"
-            "10. If there are many team/people images, create MULTIPLE slides to show them ALL."
+            "10. If there are many team/people images, create MULTIPLE slides to show them ALL.\n"
+            "11. NEVER invent image URLs — ONLY use URLs from the data above.\n"
+            "12. NEVER add fake pagination text like 'Showing X of Y' or 'Page X of Y'.\n"
+            "13. NEVER use placeholder/lorem-ipsum text — omit descriptions if not available."
             + bg_reminder
         ),
     })
@@ -1218,6 +1272,7 @@ to create a comprehensive presentation. Break each page into multiple slides.
     bg_image_css = ""
     if background_template_path and os.path.exists(background_template_path):
         bg_name_css = os.path.basename(background_template_path)
+        bg_mtime = int(os.path.getmtime(background_template_path))
         if template_brightness == "light":
             overlay = "linear-gradient(rgba(255,255,255,0.15),rgba(255,255,255,0.15))"
         else:
@@ -1225,11 +1280,12 @@ to create a comprehensive presentation. Break each page into multiple slides.
         bg_image_css = (
             f'/* Force background template image on every slide */\n'
             f'.slide{{\n'
-            f'  background:none !important;\n'
-            f"  background-image:{overlay},url('/api/v1/admin/background-templates/{bg_name_css}') !important;\n"
-            f'  background-size:cover,cover !important;\n'
-            f'  background-position:center center !important;\n'
-            f'  background-repeat:no-repeat !important;\n'
+            f'  background-color:transparent !important;\n'
+            f"  background-image:{overlay},url('/api/v1/admin/background-templates/{bg_name_css}?v={bg_mtime}') !important;\n"
+            f'  background-size:100% 100%,100% 100% !important;\n'
+            f'  background-position:0 0,0 0 !important;\n'
+            f'  background-repeat:no-repeat,no-repeat !important;\n'
+            f'  background-attachment:scroll,scroll !important;\n'
             f'}}\n'
         )
 
@@ -1237,6 +1293,9 @@ to create a comprehensive presentation. Break each page into multiple slides.
         '\n<style id="safety-overrides">\n'
         + text_color_rule
         + bg_image_css +
+        '/* Reset backgrounds on containers to prevent double-rendering */\n'
+        'body,.deck,.slide-container,.slide-wrapper{background:transparent !important;background-image:none !important;}\n'
+        '.zoom-wrapper,.slide-content,.slide>[class*="content"],.slide>[class*="wrapper"]{background:transparent !important;background-image:none !important;}\n'
         '.tag,.pill,.badge,.kpi-label,.metric-mini .label,.chart-bar span'
         '{color:inherit !important;}\n'
         '.gradient-text{-webkit-text-fill-color:transparent !important;'
@@ -1546,6 +1605,14 @@ window.addEventListener("resize",function(){setTimeout(autoFitSlides,150);});
 })();
 </script>
 """
+
+    # Strip inline background styles from .slide divs to prevent double-rendering
+    html_content = re.sub(
+        r'(<div\s+class="slide[^"]*"[^>]*?)style="[^"]*background[^"]*"',
+        r'\1',
+        html_content,
+        flags=re.IGNORECASE,
+    )
 
     if "</head>" in html_content.lower():
         html_content = html_content.replace("</head>", safety_css + "</head>", 1)

@@ -745,11 +745,13 @@ async def list_background_templates(user: User = Depends(get_admin_user)):
     if os.path.isdir(_TEMPLATES_DIR):
         for fname in sorted(os.listdir(_TEMPLATES_DIR)):
             if fname.lower().endswith((".jpg", ".jpeg", ".png", ".webp")):
+                fpath = os.path.join(_TEMPLATES_DIR, fname)
+                mtime = int(os.path.getmtime(fpath))
                 name = os.path.splitext(fname)[0].replace("_", " ")
                 templates.append(BackgroundTemplateResponse(
                     name=name,
                     filename=fname,
-                    url=f"/api/v1/admin/background-templates/{fname}",
+                    url=f"/api/v1/admin/background-templates/{fname}?v={mtime}",
                 ))
     return templates
 
@@ -760,9 +762,14 @@ async def serve_background_template(filename: str):
     filepath = os.path.join(_TEMPLATES_DIR, filename)
     if not os.path.exists(filepath):
         raise HTTPException(status_code=404, detail="Template not found")
+    # Use file modification time as ETag for cache-busting when images are replaced
+    mtime = str(int(os.path.getmtime(filepath)))
     return FileResponse(
         filepath,
-        headers={"Cache-Control": "public, max-age=604800"},
+        headers={
+            "Cache-Control": "public, max-age=60",
+            "ETag": mtime,
+        },
     )
 
 
